@@ -15,6 +15,7 @@ interface ChatPaneProps {
 
 const MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
+  { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
   { id: "mistral", name: "Mistral Small" },
   { id: "gemma", name: "Gemma 3" },
   { id: "qwen", name: "Qwen 3.6 Flash" }

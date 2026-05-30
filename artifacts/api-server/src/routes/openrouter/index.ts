@@ -15,6 +15,7 @@ const router = Router();
 
 const MODELS: Record<string, string> = {
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct",
+  "llama-4-scout": "meta-llama/llama-4-scout",
   "mistral": "mistralai/mistral-small-2603",
   "gemma": "google/gemma-3n-e4b-it",
   "qwen": "qwen/qwen3.6-flash",
@@ -165,10 +166,29 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       .where(eq(messagesTable.conversationId, conversationId))
       .orderBy(messagesTable.createdAt);
 
-    const chatMessages = history.map((m) => ({
-      role: m.role as "user" | "assistant" | "system",
-      content: m.content,
-    }));
+    const chatMessages = history.map((m) => {
+      // Try to parse structured content with attachments
+      let parsed: { text?: string; attachments?: { type: string; data: string }[] } | null = null;
+      try {
+        const p = JSON.parse(m.content);
+        if (p && Array.isArray(p.attachments)) parsed = p;
+      } catch {}
+
+      if (parsed && parsed.attachments && parsed.attachments.length > 0) {
+        const contentParts: any[] = [];
+        if (parsed.text) {
+          contentParts.push({ type: "text", text: parsed.text });
+        }
+        for (const att of parsed.attachments) {
+          if (att.type === "image") {
+            contentParts.push({ type: "image_url", image_url: { url: att.data } });
+          }
+        }
+        return { role: m.role as "user" | "assistant" | "system", content: contentParts };
+      }
+
+      return { role: m.role as "user" | "assistant" | "system", content: m.content };
+    });
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
