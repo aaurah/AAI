@@ -516,7 +516,13 @@ When the user asks about this project, answer based on the repository context ab
     }
   };
 
-  const hasToken = !!localStorage.getItem("github_token");
+  const [hasToken, setHasToken] = useState(() => !!localStorage.getItem("github_token"));
+  useEffect(() => {
+    const handler = () => setHasToken(!!localStorage.getItem("github_token"));
+    window.addEventListener("github-token-changed", handler);
+    return () => window.removeEventListener("github-token-changed", handler);
+  }, []);
+
   const filteredRepos = repos.filter((r) => r.full_name.toLowerCase().includes(repoSearch.toLowerCase()));
   const showSuggestions = !conversationId && messages.length === 0 && !isStreaming;
 
@@ -541,10 +547,16 @@ When the user asks about this project, answer based on the repository context ab
 
       {/* Active repo banner */}
       {activeRepo && (
-        <div className="flex justify-center py-2 border-b border-border/40 shrink-0">
-          <div className="flex items-center gap-2 bg-muted/50 px-3 py-1 rounded-full text-sm text-muted-foreground border border-border/40">
-            <Cloud className="h-3.5 w-3.5 text-primary/70" />
-            <span className="font-medium text-foreground">{activeRepo.repo}</span>
+        <div className="flex justify-center py-1.5 border-b border-border/40 shrink-0 bg-primary/5">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs text-muted-foreground border border-primary/20 bg-background/80">
+            <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+            <Github className="h-3 w-3 text-primary/70 shrink-0" />
+            <span className="font-medium text-foreground max-w-[200px] truncate">{activeRepo.fullName}</span>
+            <span className="text-muted-foreground/60">·</span>
+            <span className="text-muted-foreground/80">context active</span>
+            <button onClick={handleClearRepo} className="ml-1 text-muted-foreground/50 hover:text-foreground transition-colors">
+              <X className="h-3 w-3" />
+            </button>
           </div>
         </div>
       )}

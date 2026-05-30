@@ -94,12 +94,14 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
     const t = patInput.trim();
     if (!t) return;
     localStorage.setItem(GH_TOKEN_KEY, t);
+    window.dispatchEvent(new Event("github-token-changed"));
     setToken(t);
     setPatInput("");
   };
 
   const handleDisconnect = () => {
     localStorage.removeItem(GH_TOKEN_KEY);
+    window.dispatchEvent(new Event("github-token-changed"));
     setToken("");
     setRepos([]);
     setSelectedRepo(null);
@@ -146,6 +148,7 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           clearInterval(pollRef.current!);
           pollRef.current = null;
           localStorage.setItem(GH_TOKEN_KEY, data.access_token);
+          window.dispatchEvent(new Event("github-token-changed"));
           setToken(data.access_token);
           setOauthStep("idle");
           setDeviceData(null);

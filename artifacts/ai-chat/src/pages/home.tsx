@@ -11,29 +11,6 @@ export interface RepoContext {
   repo: string;
 }
 
-function formatRepoMessage(fullName: string, files: string[]): string {
-  const MAX = 250;
-  const shown = files.slice(0, MAX);
-  const extra = files.length > MAX ? `\n... and ${files.length - MAX} more files` : "";
-  const tree = shown.join("\n") + extra;
-
-  return `I've opened the **${fullName}** GitHub repository for this session.
-
-File structure (${files.length} files):
-\`\`\`
-${tree}
-\`\`\`
-
-You can help me understand, improve, and modify this codebase. When you write code changes, include the target file path as the **first line** of the code block so I can commit it directly:
-
-\`\`\`typescript
-// File: src/components/Button.tsx
-// … your code here
-\`\`\`
-
-What would you like to work on?`;
-}
-
 export default function Home() {
   const params = useParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -45,16 +22,15 @@ export default function Home() {
   const conversationId = params.id ? parseInt(params.id, 10) : undefined;
 
   const handleLoadFile = (filename: string, content: string) => {
-    setPrefilledInput(`File: ${filename}\n\`\`\`\n${content}\n\`\`\``);
+    setPrefilledInput(`File: **${filename}**\n\`\`\`\n${content}\n\`\`\``);
     setAutoSend(false);
-    setLocation("/");
     setSidebarOpen(false);
   };
 
-  const handleOpenRepoChat = (fullName: string, owner: string, repo: string, files: string[]) => {
+  const handleOpenRepoChat = (fullName: string, owner: string, repo: string, _files: string[]) => {
     setRepoContext({ fullName, owner, repo });
-    setPrefilledInput(formatRepoMessage(fullName, files));
-    setAutoSend(true);
+    setPrefilledInput("");
+    setAutoSend(false);
     setLocation("/");
     setSidebarOpen(false);
   };
