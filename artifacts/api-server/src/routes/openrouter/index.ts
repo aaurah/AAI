@@ -91,6 +91,27 @@ router.delete("/openrouter/conversations/:id", async (req, res) => {
   }
 });
 
+router.delete("/openrouter/conversations/:id/messages/:messageId", async (req, res) => {
+  const convId = Number(req.params.id);
+  const msgId = Number(req.params.messageId);
+  if (isNaN(convId) || isNaN(msgId)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+  try {
+    const [msg] = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.id, msgId));
+    if (!msg || msg.conversationId !== convId) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+    await db.delete(messagesTable).where(eq(messagesTable.id, msgId));
+    return res.status(204).send();
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to delete message" });
+  }
+});
+
 router.get("/openrouter/conversations/:id/messages", async (req, res) => {
   const parsed = ListOpenrouterMessagesParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {

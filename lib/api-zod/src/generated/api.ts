@@ -66,6 +66,15 @@ export const DeleteOpenrouterConversationParams = zod.object({
 
 
 /**
+ * @summary Delete a single message
+ */
+export const DeleteOpenrouterMessageParams = zod.object({
+  "id": zod.coerce.number(),
+  "messageId": zod.coerce.number()
+})
+
+
+/**
  * @summary List messages in a conversation
  */
 export const ListOpenrouterMessagesParams = zod.object({

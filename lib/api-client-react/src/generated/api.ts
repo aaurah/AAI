@@ -414,6 +414,78 @@ export const useDeleteOpenrouterConversation = <TError = ErrorType<OpenrouterErr
       return useMutation(getDeleteOpenrouterConversationMutationOptions(options));
     }
 
+export const getDeleteOpenrouterMessageUrl = (id: number,
+    messageId: number,) => {
+
+
+
+
+  return `/api/openrouter/conversations/${id}/messages/${messageId}`
+}
+
+/**
+ * @summary Delete a single message
+ */
+export const deleteOpenrouterMessage = async (id: number,
+    messageId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteOpenrouterMessageUrl(id,messageId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteOpenrouterMessageMutationOptions = <TError = ErrorType<OpenrouterError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOpenrouterMessage>>, TError,{id: number;messageId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOpenrouterMessage>>, TError,{id: number;messageId: number}, TContext> => {
+
+const mutationKey = ['deleteOpenrouterMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOpenrouterMessage>>, {id: number;messageId: number}> = (props) => {
+          const {id,messageId} = props ?? {};
+
+          return  deleteOpenrouterMessage(id,messageId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOpenrouterMessageMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOpenrouterMessage>>>
+
+    export type DeleteOpenrouterMessageMutationError = ErrorType<OpenrouterError>
+
+    /**
+ * @summary Delete a single message
+ */
+export const useDeleteOpenrouterMessage = <TError = ErrorType<OpenrouterError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOpenrouterMessage>>, TError,{id: number;messageId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOpenrouterMessage>>,
+        TError,
+        {id: number;messageId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteOpenrouterMessageMutationOptions(options));
+    }
+
 export const getListOpenrouterMessagesUrl = (id: number,) => {
 
 

@@ -100,6 +100,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpenrouterError"
+  /openrouter/conversations/{id}/messages/{messageId}:
+    delete:
+      operationId: deleteOpenrouterMessage
+      tags: [openrouter]
+      summary: Delete a single message
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenrouterError"
   /openrouter/conversations/{id}/messages:
     get:
       operationId: listOpenrouterMessages
