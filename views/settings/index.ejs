@@ -1,0 +1,45 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="page-title mb-0"><i class="fa-solid fa-gear me-2"></i>Settings</h2>
+</div>
+
+<form method="POST" action="/settings">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+  <% Object.entries(grouped).forEach(([group, settings]) => { %>
+  <div class="card card-dark mb-4">
+    <div class="card-header">
+      <h5 class="mb-0 text-capitalize"><i class="fa-solid fa-<%= group === 'security' ? 'shield-halved' : group === 'users' ? 'users' : group === 'notifications' ? 'bell' : 'sliders' %> me-2"></i><%= group %></h5>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <% settings.forEach(s => { %>
+        <div class="col-md-6">
+          <label class="form-label">
+            <%= s.description || s.key %>
+            <code class="text-muted ms-1 small">(<%= s.key %>)</code>
+          </label>
+          <% if (s.type === 'boolean') { %>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="settings[<%= s.key %>]" value="true"
+              id="setting_<%= s.id %>" <%= s.value === 'true' ? 'checked' : '' %> />
+            <label class="form-check-label" for="setting_<%= s.id %>">Enabled</label>
+          </div>
+          <% } else { %>
+          <input type="<%= s.type === 'number' ? 'number' : 'text' %>"
+            name="settings[<%= s.key %>]"
+            class="form-control"
+            value="<%= s.value || '' %>" />
+          <% } %>
+        </div>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+  <% }) %>
+
+  <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk me-1"></i>Save All Settings</button>
+</form>
+
+<%- include('../partials/footer') %>

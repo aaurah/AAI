@@ -1,0 +1,168 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="page-title mb-0">Dashboard</h2>
+  <span class="text-muted small">Welcome back, <strong><%= currentUser.fullName() %></strong></span>
+</div>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Total Users</div>
+        <div class="kpi-value"><%= stats.totalUsers %></div>
+        <div class="kpi-sub"><%= stats.activeUsers %> active</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-green">
+      <div class="kpi-icon"><i class="fa-solid fa-user-shield"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Roles</div>
+        <div class="kpi-value"><%= stats.totalRoles %></div>
+        <div class="kpi-sub">role definitions</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-orange">
+      <div class="kpi-icon"><i class="fa-solid fa-key"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">API Keys</div>
+        <div class="kpi-value"><%= stats.totalApiKeys %></div>
+        <div class="kpi-sub">active keys</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-purple">
+      <div class="kpi-icon"><i class="fa-solid fa-scroll"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Audit Events (30d)</div>
+        <div class="kpi-value"><%= activityData ? JSON.parse(activityData).reduce((a,b) => a + parseInt(b), 0) : 0 %></div>
+        <div class="kpi-sub">logged actions</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Activity Chart -->
+  <div class="col-lg-8">
+    <div class="card card-dark h-100">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h5 class="mb-0"><i class="fa-solid fa-chart-line me-2 text-primary"></i>Activity — Last 30 Days</h5>
+      </div>
+      <div class="card-body">
+        <canvas id="activityChart" height="250"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Logins -->
+  <div class="col-lg-4">
+    <div class="card card-dark h-100">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fa-solid fa-right-to-bracket me-2 text-success"></i>Recent Logins</h5>
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush list-dark">
+          <% recentLogins.forEach(log => { %>
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+              <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(log.username) %>&background=3b4a6b&color=fff&size=28" class="avatar-xs" alt="" />
+              <span class="small"><%= log.username %></span>
+            </div>
+            <span class="text-muted" style="font-size:.75rem"><%= moment(log.createdAt).fromNow() %></span>
+          </li>
+          <% }) %>
+          <% if (!recentLogins.length) { %>
+          <li class="list-group-item text-muted text-center small py-3">No recent logins</li>
+          <% } %>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit Feed -->
+  <div class="col-12">
+    <div class="card card-dark">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h5 class="mb-0"><i class="fa-solid fa-timeline me-2 text-warning"></i>Recent Activity</h5>
+        <a href="/audit" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-dark table-hover table-sm mb-0">
+            <thead><tr><th>Action</th><th>User</th><th>Status</th><th>Severity</th><th>Time</th></tr></thead>
+            <tbody>
+              <% recentLogs.forEach(log => { %>
+              <tr>
+                <td><code class="text-info"><%= log.action %></code></td>
+                <td>
+                  <% if (log.user) { %>
+                  <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(log.username) %>&background=3b4a6b&color=fff&size=20" class="avatar-xs me-1" alt="" />
+                  <% } %>
+                  <%= log.username || '—' %>
+                </td>
+                <td>
+                  <span class="badge bg-<%= log.status === 'success' ? 'success' : log.status === 'failure' ? 'danger' : 'warning' %>">
+                    <%= log.status %>
+                  </span>
+                </td>
+                <td>
+                  <span class="badge sev-<%= log.severity %>"><%= log.severity %></span>
+                </td>
+                <td class="text-muted small"><%= moment(log.createdAt).fromNow() %></td>
+              </tr>
+              <% }) %>
+              <% if (!recentLogs.length) { %>
+              <tr><td colspan="5" class="text-center text-muted py-3">No activity recorded yet.</td></tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% const extraScripts = `
+<script>
+(function() {
+  const labels = <%- activityLabels %>;
+  const data   = <%- activityData %>;
+  const ctx = document.getElementById('activityChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Events',
+        data,
+        borderColor: '#0d6efd',
+        backgroundColor: 'rgba(13,110,253,0.12)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#adb5bd', maxTicksLimit: 10 } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#adb5bd', precision: 0 }, beginAtZero: true },
+      }
+    }
+  });
+})();
+<\/script>
+`; %>
+
+<%- include('../partials/footer') %>

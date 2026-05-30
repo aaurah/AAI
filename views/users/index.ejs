@@ -1,0 +1,144 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="page-title mb-0"><i class="fa-solid fa-users me-2"></i>Users <span class="badge bg-secondary fs-6"><%= count %></span></h2>
+  <% if (currentUser.isSuperAdmin || (currentUser.role && currentUser.role.Permissions && currentUser.role.Permissions.some(p => p.name === 'users:create' || p.name === '*'))) { %>
+  <a href="/users/create" class="btn btn-primary"><i class="fa-solid fa-plus me-1"></i>Add User</a>
+  <% } %>
+</div>
+
+<!-- Filters -->
+<div class="card card-dark mb-4">
+  <div class="card-body py-3">
+    <form method="GET" action="/users" class="row g-2 align-items-end">
+      <div class="col-sm-4">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search name / email…" value="<%= search %>" />
+      </div>
+      <div class="col-sm-3">
+        <select name="role" class="form-select form-select-sm">
+          <option value="">All Roles</option>
+          <% roles.forEach(r => { %>
+          <option value="<%= r.id %>" <%= roleFilter == r.id ? 'selected' : '' %>><%= r.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Status</option>
+          <option value="active" <%= statusFilter === 'active' ? 'selected' : '' %>>Active</option>
+          <option value="inactive" <%= statusFilter === 'inactive' ? 'selected' : '' %>>Inactive</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+        <a href="/users" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card card-dark">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-dark table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Created</th><th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% users.forEach(u => { %>
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(u.fullName ? u.fullName() : u.username) %>&background=3b4a6b&color=fff&size=32" class="avatar-sm" alt="" />
+                <div>
+                  <div class="fw-semibold"><%= u.fullName ? u.fullName() : u.username %></div>
+                  <small class="text-muted">@<%= u.username %></small>
+                </div>
+              </div>
+            </td>
+            <td class="text-muted"><%= u.email %></td>
+            <td>
+              <% if (u.role) { %>
+              <span class="badge" style="background-color: <%= u.role.color %>"><%= u.role.name %></span>
+              <% } else { %>
+              <span class="text-muted">—</span>
+              <% } %>
+              <% if (u.isSuperAdmin) { %><span class="badge bg-danger ms-1">SAdmin</span><% } %>
+            </td>
+            <td>
+              <span class="badge bg-<%= u.isActive ? 'success' : 'secondary' %>">
+                <%= u.isActive ? 'Active' : 'Inactive' %>
+              </span>
+            </td>
+            <td class="text-muted small"><%= u.lastLogin ? moment(u.lastLogin).fromNow() : 'Never' %></td>
+            <td class="text-muted small"><%= moment(u.createdAt).format('MMM D, YYYY') %></td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a href="/users/<%= u.id %>/edit" class="btn btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></a>
+                <form method="POST" action="/users/<%= u.id %>/toggle" class="d-inline">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button type="submit" class="btn btn-outline-<%= u.isActive ? 'warning' : 'success' %>" title="<%= u.isActive ? 'Deactivate' : 'Activate' %>">
+                    <i class="fa-solid fa-<%= u.isActive ? 'ban' : 'check' %>"></i>
+                  </button>
+                </form>
+                <% if (u.id !== currentUser.id) { %>
+                <button class="btn btn-outline-danger" title="Delete" onclick="confirmDelete('/users/<%= u.id %>/delete', '<%= u.username %>')">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+                <% } %>
+              </div>
+            </td>
+          </tr>
+          <% }) %>
+          <% if (!users.length) { %>
+          <tr><td colspan="7" class="text-center text-muted py-4">No users found.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <% if (pages > 1) { %>
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <span class="text-muted small">Showing <%= (page-1)*20+1 %>–<%= Math.min(page*20, count) %> of <%= count %></span>
+    <nav><ul class="pagination pagination-sm mb-0">
+      <% for (let i = 1; i <= pages; i++) { %>
+      <li class="page-item <%= i === page ? 'active' : '' %>">
+        <a class="page-link" href="?page=<%= i %>&q=<%= search %>&role=<%= roleFilter %>&status=<%= statusFilter %>"><%= i %></a>
+      </li>
+      <% } %>
+    </ul></nav>
+  </div>
+  <% } %>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title text-danger"><i class="fa-solid fa-trash me-2"></i>Delete User</h5></div>
+      <div class="modal-body">
+        <p>Delete <strong id="deleteTarget"></strong>? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <form id="deleteForm" method="POST" class="d-inline">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% const extraScripts = `<script>
+function confirmDelete(url, name) {
+  document.getElementById('deleteTarget').textContent = name;
+  document.getElementById('deleteForm').action = url;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+<\/script>`; %>
+
+<%- include('../partials/footer') %>

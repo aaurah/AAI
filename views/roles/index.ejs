@@ -1,0 +1,74 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="page-title mb-0"><i class="fa-solid fa-user-shield me-2"></i>Roles & Permissions</h2>
+  <% if (currentUser.isSuperAdmin || (currentUser.role && currentUser.role.Permissions && currentUser.role.Permissions.some(p => p.name === 'roles:create' || p.name === '*'))) { %>
+  <a href="/roles/create" class="btn btn-primary"><i class="fa-solid fa-plus me-1"></i>New Role</a>
+  <% } %>
+</div>
+
+<div class="row g-4">
+  <% roles.forEach(role => { %>
+  <div class="col-md-6 col-xl-4">
+    <div class="card card-dark role-card h-100">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <span class="role-dot" style="background-color: <%= role.color %>"></span>
+          <h5 class="mb-0"><%= role.name %></h5>
+          <% if (role.isSystem) { %><span class="badge bg-secondary">system</span><% } %>
+        </div>
+        <span class="badge bg-dark text-muted"><%= role.users ? role.users.length : 0 %> users</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3"><%= role.description || 'No description.' %></p>
+        <div class="d-flex flex-wrap gap-1">
+          <% (role.Permissions || []).forEach(p => { %>
+          <span class="badge bg-dark text-info perm-badge"><%= p.name %></span>
+          <% }) %>
+          <% if (!role.Permissions || !role.Permissions.length) { %>
+          <span class="text-muted small">No permissions assigned</span>
+          <% } %>
+        </div>
+      </div>
+      <% if (!role.isSystem) { %>
+      <div class="card-footer d-flex gap-2">
+        <a href="/roles/<%= role.id %>/edit" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-pen me-1"></i>Edit</a>
+        <button class="btn btn-sm btn-outline-danger" onclick="confirmDelete('/roles/<%= role.id %>/delete', '<%= role.name %>')">
+          <i class="fa-solid fa-trash me-1"></i>Delete
+        </button>
+      </div>
+      <% } else { %>
+      <div class="card-footer">
+        <a href="/roles/<%= role.id %>/edit" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-eye me-1"></i>View / Edit Permissions</a>
+      </div>
+      <% } %>
+    </div>
+  </div>
+  <% }) %>
+</div>
+
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title text-danger">Delete Role</h5></div>
+      <div class="modal-body"><p>Delete role <strong id="deleteTarget"></strong>?</p></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <form id="deleteForm" method="POST" class="d-inline">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% const extraScripts = `<script>
+function confirmDelete(url, name) {
+  document.getElementById('deleteTarget').textContent = name;
+  document.getElementById('deleteForm').action = url;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+<\/script>`; %>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,78 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center mb-4">
+  <h2 class="page-title mb-0">My Profile</h2>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card card-dark">
+      <div class="card-body text-center py-4">
+        <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(currentUser.fullName()) %>&background=3b4a6b&color=fff&size=96" class="avatar-lg mb-3" alt="avatar" />
+        <h5 class="mb-1"><%= currentUser.fullName() %></h5>
+        <p class="text-muted mb-1">@<%= currentUser.username %></p>
+        <% if (currentUser.role) { %>
+        <span class="badge" style="background-color: <%= currentUser.role.color %>"><%= currentUser.role.name %></span>
+        <% } %>
+        <% if (currentUser.isSuperAdmin) { %>
+        <span class="badge bg-danger ms-1">Super Admin</span>
+        <% } %>
+        <hr />
+        <div class="text-start small text-muted">
+          <div><i class="fa-solid fa-clock me-2"></i>Last login: <%= currentUser.lastLogin ? moment(currentUser.lastLogin).fromNow() : 'Never' %></div>
+          <div class="mt-1"><i class="fa-solid fa-arrow-right-to-bracket me-2"></i>Logins: <%= currentUser.loginCount %></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card card-dark mb-4">
+      <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-user-pen me-2"></i>Edit Profile</h5></div>
+      <div class="card-body">
+        <form method="POST" action="/auth/profile">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">First Name</label>
+              <input type="text" name="firstName" class="form-control" value="<%= currentUser.firstName || '' %>" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Last Name</label>
+              <input type="text" name="lastName" class="form-control" value="<%= currentUser.lastName || '' %>" />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control" value="<%= currentUser.email %>" required />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary mt-3"><i class="fa-solid fa-floppy-disk me-1"></i>Save Changes</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card card-dark">
+      <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-lock me-2"></i>Change Password</h5></div>
+      <div class="card-body">
+        <form method="POST" action="/auth/profile/password">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <div class="mb-3">
+            <label class="form-label">Current Password</label>
+            <input type="password" name="currentPassword" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New Password</label>
+            <input type="password" name="newPassword" class="form-control" minlength="8" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" name="confirmPassword" class="form-control" required />
+          </div>
+          <button type="submit" class="btn btn-warning"><i class="fa-solid fa-key me-1"></i>Change Password</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>
