@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Github, Search, ChevronLeft, Lock, Globe, File, Loader2, X } from "lucide-react";
+import { Github, Search, ChevronLeft, Lock, Globe, File, Loader2, X, KeyRound, RefreshCw, ExternalLink, Copy, CheckCircle2 } from "lucide-react";
 
 interface CodePanelProps {
   onLoadFile: (filename: string, content: string) => void;
@@ -19,96 +19,164 @@ interface Repo {
 
 interface FileNode {
   path: string;
-  mode: string;
   type: "blob" | "tree";
   sha: string;
   size?: number;
-  url: string;
+}
+
+type AuthMethod = "pat" | "oauth";
+
+const GH_TOKEN_KEY = "github_token";
+const GH_CLIENT_ID_KEY = "github_client_id";
+
+async function ghFetch(url: string, token: string) {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json" },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const msg = (body.message as string) || res.statusText;
+    if (res.status === 401) throw new Error("Invalid or expired token. Please reconnect.");
+    if (res.status === 403) throw new Error(`Access denied: ${msg}`);
+    throw new Error(msg || `GitHub error ${res.status}`);
+  }
+  return res.json();
 }
 
 export function CodePanel({ onLoadFile }: CodePanelProps) {
-  const [token, setToken] = useState<string>(() => localStorage.getItem("github_pat") || "");
-  const [inputToken, setInputToken] = useState("");
+  const [token, setToken] = useState<string>(() => localStorage.getItem(GH_TOKEN_KEY) || "");
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("pat");
+
+  const [patInput, setPatInput] = useState("");
+  const [clientIdInput, setClientIdInput] = useState<string>(() => localStorage.getItem(GH_CLIENT_ID_KEY) || "");
+  const [oauthStep, setOauthStep] = useState<"idle" | "polling" | "done">("idle");
+  const [deviceData, setDeviceData] = useState<{ user_code: string; verification_uri: string; device_code: string; interval: number } | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [repos, setRepos] = useState<Repo[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
+  const [repoError, setRepoError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
-  
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
   const [files, setFiles] = useState<FileNode[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [loadingFileSha, setLoadingFileSha] = useState<string | null>(null);
+  const [gitUser, setGitUser] = useState<string>("");
 
   useEffect(() => {
-    if (token) {
-      fetchRepos(token);
-    }
+    if (token) fetchRepos(token);
   }, [token]);
 
-  const handleConnect = () => {
-    if (inputToken.trim()) {
-      localStorage.setItem("github_pat", inputToken.trim());
-      setToken(inputToken.trim());
-      setInputToken("");
-    }
-  };
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  const handleDisconnect = () => {
-    localStorage.removeItem("github_pat");
-    setToken("");
-    setRepos([]);
-    setSelectedRepo(null);
-    setFiles([]);
-    setError(null);
-  };
-
-  const fetchRepos = async (pat: string) => {
+  const fetchRepos = async (t: string) => {
     setIsLoadingRepos(true);
-    setError(null);
+    setRepoError(null);
     try {
-      const res = await fetch("https://api.github.com/user/repos?sort=updated&per_page=50", {
-        headers: {
-          Authorization: `Bearer ${pat}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      });
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("Invalid token");
-        if (res.status === 403) throw new Error("API rate limit exceeded or token expired");
-        throw new Error("Failed to fetch repositories");
-      }
-      const data = await res.json();
+      const user = await ghFetch("https://api.github.com/user", t) as { login: string };
+      setGitUser(user.login);
+      const data = await ghFetch("https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator", t) as Repo[];
       setRepos(data);
-    } catch (err: any) {
-      setError(err.message);
-      setToken("");
-      localStorage.removeItem("github_pat");
+    } catch (err: unknown) {
+      setRepoError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsLoadingRepos(false);
     }
   };
 
+  const handlePatConnect = () => {
+    const t = patInput.trim();
+    if (!t) return;
+    localStorage.setItem(GH_TOKEN_KEY, t);
+    setToken(t);
+    setPatInput("");
+  };
+
+  const handleDisconnect = () => {
+    localStorage.removeItem(GH_TOKEN_KEY);
+    setToken("");
+    setRepos([]);
+    setSelectedRepo(null);
+    setFiles([]);
+    setRepoError(null);
+    setGitUser("");
+    setOauthStep("idle");
+    setDeviceData(null);
+    if (pollRef.current) clearInterval(pollRef.current);
+  };
+
+  const handleStartOAuth = async () => {
+    const cid = clientIdInput.trim();
+    if (!cid) return;
+    localStorage.setItem(GH_CLIENT_ID_KEY, cid);
+    setRepoError(null);
+
+    try {
+      const res = await fetch("/api/github/device/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: cid }),
+      });
+      const data = await res.json() as { user_code?: string; verification_uri?: string; device_code?: string; interval?: number; error?: string };
+      if (data.error || !data.user_code) throw new Error(data.error || "Failed to start OAuth");
+      setDeviceData({ user_code: data.user_code!, verification_uri: data.verification_uri!, device_code: data.device_code!, interval: data.interval || 5 });
+      setOauthStep("polling");
+      startPolling(cid, data.device_code!, data.interval || 5);
+    } catch (err: unknown) {
+      setRepoError(err instanceof Error ? err.message : "Failed to start OAuth flow");
+    }
+  };
+
+  const startPolling = (cid: string, deviceCode: string, interval: number) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch("/api/github/device/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientId: cid, deviceCode }),
+        });
+        const data = await res.json() as { access_token?: string; error?: string };
+        if (data.access_token) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          localStorage.setItem(GH_TOKEN_KEY, data.access_token);
+          setToken(data.access_token);
+          setOauthStep("done");
+          setDeviceData(null);
+        }
+      } catch {}
+    }, interval * 1000);
+  };
+
+  const cancelOAuth = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setOauthStep("idle");
+    setDeviceData(null);
+  };
+
+  const copyCode = () => {
+    if (deviceData) {
+      navigator.clipboard.writeText(deviceData.user_code);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  };
+
   const fetchFiles = async (repo: Repo) => {
     setSelectedRepo(repo);
+    setFiles([]);
     setIsLoadingFiles(true);
-    setError(null);
+    setFileError(null);
     try {
-      const res = await fetch(`https://api.github.com/repos/${repo.full_name}/git/trees/HEAD?recursive=1`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      });
-      if (!res.ok) throw new Error("Failed to fetch repository files");
-      const data = await res.json();
-      
-      const blobs = data.tree.filter((node: FileNode) => node.type === "blob");
-      // Sort by path
-      blobs.sort((a: FileNode, b: FileNode) => a.path.localeCompare(b.path));
+      const data = await ghFetch(`https://api.github.com/repos/${repo.full_name}/git/trees/HEAD?recursive=1`, token) as { tree: FileNode[] };
+      const blobs = data.tree.filter((n) => n.type === "blob").sort((a, b) => a.path.localeCompare(b.path));
       setFiles(blobs);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setFileError(err instanceof Error ? err.message : "Failed to load files");
       setSelectedRepo(null);
     } finally {
       setIsLoadingFiles(false);
@@ -117,33 +185,18 @@ export function CodePanel({ onLoadFile }: CodePanelProps) {
 
   const handleLoadFile = async (file: FileNode) => {
     if (file.size && file.size > 100 * 1024) {
-      setError("File is too large (> 100KB)");
+      setFileError("File too large (> 100KB). Try a smaller file.");
       return;
     }
-    
     setLoadingFileSha(file.sha);
-    setError(null);
+    setFileError(null);
     try {
-      const res = await fetch(`https://api.github.com/repos/${selectedRepo!.full_name}/contents/${file.path}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      });
-      if (!res.ok) throw new Error("Failed to fetch file content");
-      const data = await res.json();
-      
-      // Content is base64 encoded
-      let content = "";
-      if (data.encoding === "base64") {
-        content = decodeURIComponent(escape(window.atob(data.content)));
-      } else {
-        throw new Error(`Unsupported encoding: ${data.encoding}`);
-      }
-      
+      const data = await ghFetch(`https://api.github.com/repos/${selectedRepo!.full_name}/contents/${file.path}`, token) as { encoding: string; content: string };
+      if (data.encoding !== "base64") throw new Error("Unsupported encoding");
+      const content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
       onLoadFile(file.path, content);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setFileError(err instanceof Error ? err.message : "Failed to load file");
     } finally {
       setLoadingFileSha(null);
     }
@@ -151,118 +204,203 @@ export function CodePanel({ onLoadFile }: CodePanelProps) {
 
   if (!token) {
     return (
-      <div className="flex flex-col p-4 space-y-4 h-full" data-testid="code-panel-disconnected">
-        <div>
-          <h3 className="text-lg font-semibold text-primary flex items-center gap-2">
-            <Github className="h-5 w-5" />
+      <div className="flex flex-col h-full overflow-hidden" data-testid="code-panel-disconnected">
+        <div className="p-4 border-b border-sidebar-border">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Github className="h-4 w-4 text-primary" />
             Connect GitHub
           </h3>
-          <p className="text-xs text-muted-foreground mt-1">
-            Enter a Personal Access Token to access your repos
-          </p>
         </div>
-        
-        <div className="space-y-3">
-          <Input 
-            type="password" 
-            placeholder="ghp_..." 
-            value={inputToken}
-            onChange={(e) => setInputToken(e.target.value)}
-            className="h-9 text-xs"
-            data-testid="github-pat-input"
-          />
-          <Button 
-            onClick={handleConnect} 
-            className="w-full h-9 text-xs font-medium"
-            disabled={!inputToken.trim()}
-            data-testid="github-connect-btn"
+
+        <div className="flex border-b border-sidebar-border">
+          <button
+            onClick={() => setAuthMethod("pat")}
+            className={`flex-1 py-2 text-xs font-medium transition-colors ${authMethod === "pat" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+            data-testid="auth-tab-pat"
           >
-            Connect
-          </Button>
-          
-          <div className="text-[10px] text-center text-muted-foreground/70 underline cursor-help">
-            Create a token at github.com/settings/tokens
-          </div>
+            <KeyRound className="h-3 w-3 inline mr-1" />
+            Access Token
+          </button>
+          <button
+            onClick={() => setAuthMethod("oauth")}
+            className={`flex-1 py-2 text-xs font-medium transition-colors ${authMethod === "oauth" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+            data-testid="auth-tab-oauth"
+          >
+            <Github className="h-3 w-3 inline mr-1" />
+            OAuth App
+          </button>
         </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-4">
+            {repoError && (
+              <div className="p-3 text-xs bg-destructive/10 text-destructive rounded-md border border-destructive/20">
+                {repoError}
+              </div>
+            )}
+
+            {authMethod === "pat" && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Generate a token at GitHub with <strong>repo</strong> scope for private repos.
+                </p>
+                <Input
+                  type="password"
+                  placeholder="ghp_... or github_pat_..."
+                  value={patInput}
+                  onChange={(e) => setPatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handlePatConnect()}
+                  className="h-9 text-xs font-mono"
+                  data-testid="github-pat-input"
+                  autoComplete="off"
+                />
+                <Button
+                  onClick={handlePatConnect}
+                  className="w-full h-9 text-xs font-medium"
+                  disabled={!patInput.trim()}
+                  data-testid="github-connect-btn"
+                >
+                  Connect
+                </Button>
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=repo,read:user"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors justify-center"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Generate token on GitHub
+                </a>
+              </div>
+            )}
+
+            {authMethod === "oauth" && oauthStep === "idle" && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Enter your GitHub OAuth App Client ID. Create one at{" "}
+                  <a href="https://github.com/settings/applications/new" target="_blank" rel="noreferrer" className="text-primary underline">
+                    github.com/settings/applications/new
+                  </a>
+                  {" "}— set any URL as homepage, callback URL is not required for Device Flow.
+                </p>
+                <Input
+                  placeholder="Client ID (Oauth2xxxxxxxx)"
+                  value={clientIdInput}
+                  onChange={(e) => setClientIdInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleStartOAuth()}
+                  className="h-9 text-xs font-mono"
+                  data-testid="github-client-id-input"
+                />
+                <Button
+                  onClick={handleStartOAuth}
+                  className="w-full h-9 text-xs font-medium"
+                  disabled={!clientIdInput.trim()}
+                  data-testid="github-oauth-start-btn"
+                >
+                  <Github className="h-4 w-4 mr-2" />
+                  Authorize with GitHub
+                </Button>
+              </div>
+            )}
+
+            {authMethod === "oauth" && oauthStep === "polling" && deviceData && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3 text-center">
+                  <p className="text-xs text-muted-foreground">Enter this code on GitHub:</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-2xl font-mono font-bold tracking-widest text-primary">
+                      {deviceData.user_code}
+                    </span>
+                    <button onClick={copyCode} className="text-muted-foreground hover:text-primary transition-colors" data-testid="copy-device-code">
+                      {codeCopied ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <a
+                    href={deviceData.verification_uri}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {deviceData.verification_uri}
+                  </a>
+                </div>
+                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Waiting for authorization...
+                </div>
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={cancelOAuth} data-testid="cancel-oauth-btn">
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
       </div>
     );
   }
 
-  const filteredRepos = repos.filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredRepos = repos.filter((r) => r.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="code-panel-connected">
-      {/* Header */}
-      <div className="p-3 border-b flex items-center justify-between shrink-0 bg-sidebar">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Github className="h-4 w-4" />
-          <span>Connected</span>
+      <div className="p-3 border-b border-sidebar-border flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2 text-sm font-medium truncate">
+          <Github className="h-4 w-4 text-primary shrink-0" />
+          <span className="truncate text-xs">{gitUser || "Connected"}</span>
         </div>
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-          onClick={handleDisconnect}
-          data-testid="github-disconnect-btn"
-        >
-          Disconnect
-        </Button>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => fetchRepos(token)} title="Refresh" data-testid="refresh-repos-btn">
+            <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive" onClick={handleDisconnect} data-testid="github-disconnect-btn">
+            Disconnect
+          </Button>
+        </div>
       </div>
 
-      {error && (
-        <div className="p-3 mx-3 mt-3 text-xs bg-destructive/10 text-destructive rounded-md border border-destructive/20 break-words shrink-0">
-          {error}
+      {repoError && (
+        <div className="mx-3 mt-2 p-2 text-xs bg-destructive/10 text-destructive rounded-md border border-destructive/20 break-words shrink-0">
+          {repoError}
+          <Button variant="ghost" size="sm" className="mt-1 h-6 w-full text-[10px]" onClick={() => fetchRepos(token)}>Retry</Button>
         </div>
       )}
 
       {selectedRepo ? (
-        // File Browser
-        <div className="flex flex-col flex-1 overflow-hidden" data-testid="file-browser">
-          <div className="p-3 border-b shrink-0 space-y-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-7 px-0 text-xs text-muted-foreground hover:text-foreground -ml-1 justify-start gap-1"
-              onClick={() => { setSelectedRepo(null); setFiles([]); setError(null); }}
-              data-testid="back-to-repos-btn"
-            >
-              <ChevronLeft className="h-3 w-3" />
-              Back to repos
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-3 border-b border-sidebar-border shrink-0 space-y-1">
+            <Button variant="ghost" size="sm" className="h-7 px-0 text-xs text-muted-foreground -ml-1 justify-start gap-1"
+              onClick={() => { setSelectedRepo(null); setFiles([]); setFileError(null); }} data-testid="back-to-repos-btn">
+              <ChevronLeft className="h-3 w-3" /> Back
             </Button>
-            <h4 className="text-sm font-semibold truncate" title={selectedRepo.full_name}>
-              {selectedRepo.name}
-            </h4>
+            <p className="text-xs font-semibold truncate">{selectedRepo.name}</p>
           </div>
-          
+
+          {fileError && (
+            <div className="mx-3 mt-2 p-2 text-xs bg-destructive/10 text-destructive rounded-md border border-destructive/20 shrink-0">
+              {fileError}
+            </div>
+          )}
+
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-0.5">
               {isLoadingFiles ? (
-                <div className="py-8 flex justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
+                <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
               ) : files.length === 0 ? (
-                <div className="py-8 text-center text-xs text-muted-foreground">
-                  No files found
-                </div>
+                <div className="py-8 text-center text-xs text-muted-foreground">No files found</div>
               ) : (
-                files.map(file => (
-                  <div 
-                    key={file.path} 
-                    className="flex items-center justify-between group p-1.5 hover:bg-sidebar-accent/50 rounded-md text-xs"
-                    data-testid={`file-row-${file.sha}`}
-                  >
+                files.map((file) => (
+                  <div key={file.sha} className="flex items-center justify-between group p-1.5 hover:bg-sidebar-accent/50 rounded-md text-xs" data-testid={`file-row-${file.sha}`}>
                     <div className="flex items-center gap-2 overflow-hidden mr-2">
                       <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate text-muted-foreground group-hover:text-foreground transition-colors" title={file.path}>
-                        {file.path}
-                      </span>
+                      <span className="truncate text-muted-foreground group-hover:text-foreground" title={file.path}>{file.path}</span>
                     </div>
-                    <Button 
-                      variant="secondary" 
-                      size="sm" 
+                    <Button
+                      variant="secondary" size="sm"
                       className="h-6 px-2 text-[10px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => handleLoadFile(file)}
-                      disabled={loadingFileSha === file.sha || (file.size ? file.size > 100 * 1024 : false)}
+                      disabled={loadingFileSha === file.sha || (!!file.size && file.size > 100 * 1024)}
+                      title={file.size && file.size > 100 * 1024 ? "File too large" : "Load into chat"}
                       data-testid={`load-file-btn-${file.sha}`}
                     >
                       {loadingFileSha === file.sha ? <Loader2 className="h-3 w-3 animate-spin" /> : "Load"}
@@ -274,69 +412,45 @@ export function CodePanel({ onLoadFile }: CodePanelProps) {
           </ScrollArea>
         </div>
       ) : (
-        // Repo List
-        <div className="flex flex-col flex-1 overflow-hidden" data-testid="repo-browser">
-          <div className="p-3 border-b shrink-0">
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-3 border-b border-sidebar-border shrink-0">
             <div className="relative">
               <Search className="absolute left-2 top-1.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search repos..." 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="h-7 text-xs pl-8 bg-background/50 border-sidebar-border"
-                data-testid="repo-search-input"
-              />
+              <Input placeholder="Search repos..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-7 text-xs pl-8 bg-background/50" data-testid="repo-search-input" />
               {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground"
-                >
+                <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground">
                   <X className="h-4 w-4" />
                 </button>
               )}
             </div>
           </div>
-          
+
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-1">
               {isLoadingRepos ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="p-3 rounded-md border border-transparent space-y-2 animate-pulse">
-                    <div className="h-4 bg-muted rounded w-2/3"></div>
-                    <div className="h-3 bg-muted rounded w-1/3"></div>
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="p-3 rounded-md space-y-2 animate-pulse">
+                    <div className="h-3.5 bg-muted rounded w-2/3" />
+                    <div className="h-3 bg-muted rounded w-1/3" />
                   </div>
                 ))
               ) : filteredRepos.length === 0 ? (
                 <div className="py-8 text-center text-xs text-muted-foreground">
-                  {searchQuery ? "No repos match search" : "No repositories found"}
+                  {searchQuery ? "No repos match" : "No repositories found"}
                 </div>
               ) : (
-                filteredRepos.map(repo => (
-                  <button
-                    key={repo.id}
-                    onClick={() => fetchFiles(repo)}
+                filteredRepos.map((repo) => (
+                  <button key={repo.id} onClick={() => fetchFiles(repo)}
                     className="w-full text-left p-2.5 rounded-md hover:bg-sidebar-accent/50 transition-colors border border-transparent hover:border-sidebar-border group"
-                    data-testid={`repo-row-${repo.id}`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <span className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                        {repo.name}
-                      </span>
-                      {repo.private ? (
-                        <Lock className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                      ) : (
-                        <Globe className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                      )}
+                    data-testid={`repo-row-${repo.id}`}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-medium truncate group-hover:text-primary transition-colors">{repo.name}</span>
+                      {repo.private ? <Lock className="h-3 w-3 text-muted-foreground shrink-0" /> : <Globe className="h-3 w-3 text-muted-foreground shrink-0" />}
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                      {repo.language && (
-                        <span className="px-1.5 py-0.5 rounded-sm bg-muted font-medium">
-                          {repo.language}
-                        </span>
-                      )}
-                      <span className="truncate">
-                        Updated {new Date(repo.updated_at).toLocaleDateString()}
-                      </span>
+                      {repo.language && <span className="px-1.5 py-0.5 rounded-sm bg-muted font-medium">{repo.language}</span>}
+                      <span>Updated {new Date(repo.updated_at).toLocaleDateString()}</span>
                     </div>
                   </button>
                 ))
