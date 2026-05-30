@@ -13,6 +13,7 @@ interface SidebarProps {
   activeId?: number;
   onCloseMobile: () => void;
   onLoadFile: (filename: string, content: string) => void;
+  onOpenRepoChat: (fullName: string, owner: string, repo: string, files: string[]) => void;
 }
 
 interface SwipeState {
@@ -44,32 +45,21 @@ function ConversationItem({
   const pastThreshold = clampedOffset <= -SWIPE_THRESHOLD;
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    swipeRef.current = {
-      startX: e.touches[0].clientX,
-      currentX: e.touches[0].clientX,
-      swiping: true,
-    };
+    swipeRef.current = { startX: e.touches[0].clientX, currentX: e.touches[0].clientX, swiping: true };
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!swipeRef.current.swiping) return;
     const dx = e.touches[0].clientX - swipeRef.current.startX;
     swipeRef.current.currentX = e.touches[0].clientX;
-    if (dx > 0) {
-      setOffset(0);
-      return;
-    }
+    if (dx > 0) { setOffset(0); return; }
     setOffset(dx);
   };
 
   const handleTouchEnd = () => {
     swipeRef.current.swiping = false;
-    if (offset <= -SWIPE_THRESHOLD) {
-      setIsDeleting(true);
-      onDelete(conv.id);
-    } else {
-      setOffset(0);
-    }
+    if (offset <= -SWIPE_THRESHOLD) { setIsDeleting(true); onDelete(conv.id); }
+    else setOffset(0);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -86,11 +76,7 @@ function ConversationItem({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       setOffset((prev) => {
-        if (prev <= -SWIPE_THRESHOLD) {
-          setIsDeleting(true);
-          onDelete(conv.id);
-          return prev;
-        }
+        if (prev <= -SWIPE_THRESHOLD) { setIsDeleting(true); onDelete(conv.id); return prev; }
         return 0;
       });
     };
@@ -102,19 +88,13 @@ function ConversationItem({
 
   return (
     <div className="relative overflow-hidden rounded-md" data-testid={`conv-item-${conv.id}`}>
-      {/* Delete background */}
       <div
-        className={`absolute inset-y-0 right-0 flex items-center justify-center transition-colors rounded-md ${
-          pastThreshold ? "bg-destructive" : "bg-destructive/70"
-        }`}
+        className={`absolute inset-y-0 right-0 flex items-center justify-center transition-colors rounded-md ${pastThreshold ? "bg-destructive" : "bg-destructive/70"}`}
         style={{ width: Math.abs(clampedOffset) || 0 }}
       >
-        {deleteVisible && (
-          <Trash2 className="h-4 w-4 text-white shrink-0" />
-        )}
+        {deleteVisible && <Trash2 className="h-4 w-4 text-white shrink-0" />}
       </div>
 
-      {/* Swipeable row */}
       <Link href={`/c/${conv.id}`}>
         <div
           ref={itemRef}
@@ -124,30 +104,19 @@ function ConversationItem({
           onMouseDown={handleMouseDown}
           onClick={offset === 0 ? onCloseMobile : undefined}
           style={{ transform: `translateX(${clampedOffset}px)`, transition: swipeRef.current.swiping ? "none" : "transform 0.2s ease" }}
-          className={`group flex items-center justify-between rounded-md px-3 py-2 text-sm cursor-pointer select-none ${
-            isActive
-              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-              : "bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent/50"
-          }`}
+          className={`group flex items-center justify-between rounded-md px-3 py-2 text-sm cursor-pointer select-none ${isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : "bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent/50"}`}
           data-testid={`conv-row-${conv.id}`}
         >
           <div className="flex items-center gap-2 overflow-hidden">
             <MessageSquare className="h-4 w-4 shrink-0 opacity-70" />
             <div className="flex flex-col overflow-hidden">
               <span className="truncate">{conv.title || "New Chat"}</span>
-              <span className="text-[10px] opacity-50">
-                {format(new Date(conv.createdAt), "MMM d, h:mm a")}
-              </span>
+              <span className="text-[10px] opacity-50">{format(new Date(conv.createdAt), "MMM d, h:mm a")}</span>
             </div>
           </div>
-
           <button
             data-testid={`conv-delete-btn-${conv.id}`}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onDelete(conv.id);
-            }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(conv.id); }}
             className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-opacity shrink-0"
             title="Delete"
           >
@@ -159,9 +128,9 @@ function ConversationItem({
   );
 }
 
-export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
+export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<"chats" | "code">("chats");
-  
+
   const { data: conversations, isLoading } = useListOpenrouterConversations();
   const deleteConversation = useDeleteOpenrouterConversation();
   const [, setLocation] = useLocation();
@@ -169,18 +138,14 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
 
   const handleNew = () => {
     setLocation("/");
-    if (window.innerWidth < 768) {
-      onCloseMobile();
-    }
+    if (window.innerWidth < 768) onCloseMobile();
   };
 
   const handleDelete = (id: number) => {
     deleteConversation.mutate({ id }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListOpenrouterConversationsQueryKey() });
-        if (activeId === id) {
-          setLocation("/");
-        }
+        if (activeId === id) setLocation("/");
       }
     });
   };
@@ -195,11 +160,7 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
               <button
                 data-testid="tab-chats"
                 onClick={() => setActiveTab("chats")}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
-                  activeTab === "chats"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-                }`}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${activeTab === "chats" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"}`}
               >
                 <MessageSquare className="h-5 w-5" />
               </button>
@@ -212,11 +173,7 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
               <button
                 data-testid="tab-code"
                 onClick={() => setActiveTab("code")}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
-                  activeTab === "code"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-                }`}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${activeTab === "code" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"}`}
               >
                 <Code2 className="h-5 w-5" />
               </button>
@@ -244,37 +201,19 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
         {activeTab === "chats" && (
           <>
             <div className="p-4 border-b border-sidebar-border">
-              <Button
-                onClick={handleNew}
-                className="w-full justify-start gap-2"
-                variant="default"
-                data-testid="new-conversation-btn"
-              >
+              <Button onClick={handleNew} className="w-full justify-start gap-2" variant="default" data-testid="new-conversation-btn">
                 <Plus className="h-4 w-4" />
                 New Conversation
               </Button>
             </div>
-
             <ScrollArea className="flex-1">
               <div className="p-2 space-y-1">
-                {isLoading && (
-                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">Loading...</div>
-                )}
-
+                {isLoading && <div className="px-2 py-4 text-center text-sm text-muted-foreground">Loading...</div>}
                 {!isLoading && (!conversations || conversations.length === 0) && (
-                  <div className="px-2 py-8 text-center text-sm text-muted-foreground">
-                    No conversations yet
-                  </div>
+                  <div className="px-2 py-8 text-center text-sm text-muted-foreground">No conversations yet</div>
                 )}
-
                 {conversations?.map((conv) => (
-                  <ConversationItem
-                    key={conv.id}
-                    conv={conv}
-                    isActive={activeId === conv.id}
-                    onDelete={handleDelete}
-                    onCloseMobile={onCloseMobile}
-                  />
+                  <ConversationItem key={conv.id} conv={conv} isActive={activeId === conv.id} onDelete={handleDelete} onCloseMobile={onCloseMobile} />
                 ))}
               </div>
             </ScrollArea>
@@ -282,7 +221,7 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
         )}
 
         {activeTab === "code" && (
-          <CodePanel onLoadFile={onLoadFile} />
+          <CodePanel onLoadFile={onLoadFile} onOpenRepoChat={onOpenRepoChat} />
         )}
       </div>
     </div>

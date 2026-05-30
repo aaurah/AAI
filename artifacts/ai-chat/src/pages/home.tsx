@@ -5,44 +5,97 @@ import { useState } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+export interface RepoContext {
+  fullName: string;
+  owner: string;
+  repo: string;
+}
+
+function formatRepoMessage(fullName: string, files: string[]): string {
+  const MAX = 250;
+  const shown = files.slice(0, MAX);
+  const extra = files.length > MAX ? `\n... and ${files.length - MAX} more files` : "";
+  const tree = shown.join("\n") + extra;
+
+  return `I've opened the **${fullName}** GitHub repository for this session.
+
+File structure (${files.length} files):
+\`\`\`
+${tree}
+\`\`\`
+
+You can help me understand, improve, and modify this codebase. When you write code changes, include the target file path as the **first line** of the code block so I can commit it directly:
+
+\`\`\`typescript
+// File: src/components/Button.tsx
+// … your code here
+\`\`\`
+
+What would you like to work on?`;
+}
+
 export default function Home() {
   const params = useParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prefilledInput, setPrefilledInput] = useState<string>("");
+  const [autoSend, setAutoSend] = useState(false);
+  const [repoContext, setRepoContext] = useState<RepoContext | null>(null);
   const [, setLocation] = useLocation();
 
   const conversationId = params.id ? parseInt(params.id, 10) : undefined;
 
   const handleLoadFile = (filename: string, content: string) => {
     setPrefilledInput(`File: ${filename}\n\`\`\`\n${content}\n\`\`\``);
+    setAutoSend(false);
     setLocation("/");
     setSidebarOpen(false);
   };
 
+  const handleOpenRepoChat = (fullName: string, owner: string, repo: string, files: string[]) => {
+    setRepoContext({ fullName, owner, repo });
+    setPrefilledInput(formatRepoMessage(fullName, files));
+    setAutoSend(true);
+    setLocation("/");
+    setSidebarOpen(false);
+  };
+
+  const handlePrefilledClear = () => {
+    setPrefilledInput("");
+    setAutoSend(false);
+  };
+
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-background">
-      {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      
-      {/* Sidebar */}
+
       <div className={`fixed inset-y-0 left-0 z-50 w-[272px] transform border-r bg-sidebar transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <Sidebar activeId={conversationId} onCloseMobile={() => setSidebarOpen(false)} onLoadFile={handleLoadFile} />
+        <Sidebar
+          activeId={conversationId}
+          onCloseMobile={() => setSidebarOpen(false)}
+          onLoadFile={handleLoadFile}
+          onOpenRepoChat={handleOpenRepoChat}
+        />
       </div>
 
-      {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden relative">
         <div className="absolute top-4 left-4 z-10 md:hidden">
           <Button variant="outline" size="icon" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
         </div>
-        
-        <ChatPane conversationId={conversationId} prefilledInput={prefilledInput} onPrefilledInputClear={() => setPrefilledInput("")} />
+
+        <ChatPane
+          conversationId={conversationId}
+          prefilledInput={prefilledInput}
+          autoSend={autoSend}
+          repoContext={repoContext}
+          onPrefilledInputClear={handlePrefilledClear}
+        />
       </div>
     </div>
   );
