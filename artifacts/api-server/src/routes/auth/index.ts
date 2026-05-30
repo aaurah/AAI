@@ -6,9 +6,12 @@ import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router = Router();
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("JWT_SECRET environment variable must be set in production");
+}
 export const JWT_SECRET = process.env.JWT_SECRET || "dev_jwt_secret_change_in_production";
 const SALT_ROUNDS = 10;
-const ADMIN_EMAIL = "aaurah@protonmail.com";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
 export function signToken(userId: number) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
@@ -30,7 +33,7 @@ router.post("/auth/signup", async (req, res) => {
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email.toLowerCase())).limit(1);
     if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const isAdmin = email.toLowerCase() === ADMIN_EMAIL;
+    const isAdmin = ADMIN_EMAIL !== "" && email.toLowerCase() === ADMIN_EMAIL;
     const plan = isAdmin ? "business" : "starter";
     const [user] = await db.insert(users).values({ name, email: email.toLowerCase(), passwordHash, plan, isAdmin }).returning();
     const token = signToken(user.id);

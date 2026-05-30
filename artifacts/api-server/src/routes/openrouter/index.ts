@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
+import { users } from "@workspace/db/schema";
 import { openrouter } from "@workspace/integrations-openrouter-ai";
 import {
   CreateOpenrouterConversationBody,
@@ -9,9 +10,24 @@ import {
   ListOpenrouterMessagesParams,
   SendOpenrouterMessageParams,
 } from "@workspace/api-zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
+import { verifyToken } from "../auth";
 
 const router = Router();
+
+async function requireAuth(req: any, res: any): Promise<{ userId: number } | null> {
+  const payload = await verifyToken(req.headers.authorization);
+  if (!payload) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, payload.userId)).limit(1);
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  return { userId: user.id };
+}
 
 const MODELS: Record<string, string> = {
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct",
@@ -47,10 +63,13 @@ You are a powerful AI assistant optimized for software development, code review,
 - When a user asks what you can do or what this app does, explain the features above.`;
 
 router.get("/openrouter/conversations", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   try {
     const conversations = await db
       .select()
       .from(conversationsTable)
+      .where(eq(conversationsTable.userId, auth.userId))
       .orderBy(desc(conversationsTable.createdAt));
     res.json(conversations);
   } catch (err) {
@@ -59,6 +78,8 @@ router.get("/openrouter/conversations", async (req, res) => {
 });
 
 router.post("/openrouter/conversations", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   const parsed = CreateOpenrouterConversationBody.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request body" });
@@ -66,7 +87,7 @@ router.post("/openrouter/conversations", async (req, res) => {
   try {
     const [conv] = await db
       .insert(conversationsTable)
-      .values({ title: parsed.data.title })
+      .values({ title: parsed.data.title, userId: auth.userId })
       .returning();
     return res.status(201).json(conv);
   } catch (err) {
@@ -75,6 +96,8 @@ router.post("/openrouter/conversations", async (req, res) => {
 });
 
 router.get("/openrouter/conversations/:id", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   const parsed = GetOpenrouterConversationParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid id" });
@@ -83,7 +106,7 @@ router.get("/openrouter/conversations/:id", async (req, res) => {
     const [conv] = await db
       .select()
       .from(conversationsTable)
-      .where(eq(conversationsTable.id, parsed.data.id));
+      .where(and(eq(conversationsTable.id, parsed.data.id), eq(conversationsTable.userId, auth.userId)));
     if (!conv) return res.status(404).json({ error: "Conversation not found" });
     const messages = await db
       .select()
@@ -97,6 +120,8 @@ router.get("/openrouter/conversations/:id", async (req, res) => {
 });
 
 router.delete("/openrouter/conversations/:id", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   const parsed = DeleteOpenrouterConversationParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid id" });
@@ -105,7 +130,7 @@ router.delete("/openrouter/conversations/:id", async (req, res) => {
     const [conv] = await db
       .select()
       .from(conversationsTable)
-      .where(eq(conversationsTable.id, parsed.data.id));
+      .where(and(eq(conversationsTable.id, parsed.data.id), eq(conversationsTable.userId, auth.userId)));
     if (!conv) return res.status(404).json({ error: "Conversation not found" });
     await db.delete(messagesTable).where(eq(messagesTable.conversationId, parsed.data.id));
     await db.delete(conversationsTable).where(eq(conversationsTable.id, parsed.data.id));
@@ -116,12 +141,19 @@ router.delete("/openrouter/conversations/:id", async (req, res) => {
 });
 
 router.delete("/openrouter/conversations/:id/messages/:messageId", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   const convId = Number(req.params.id);
   const msgId = Number(req.params.messageId);
   if (isNaN(convId) || isNaN(msgId)) {
     return res.status(400).json({ error: "Invalid id" });
   }
   try {
+    const [conv] = await db
+      .select()
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, convId), eq(conversationsTable.userId, auth.userId)));
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
     const [msg] = await db
       .select()
       .from(messagesTable)
@@ -137,11 +169,18 @@ router.delete("/openrouter/conversations/:id/messages/:messageId", async (req, r
 });
 
 router.get("/openrouter/conversations/:id/messages", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   const parsed = ListOpenrouterMessagesParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid id" });
   }
   try {
+    const [conv] = await db
+      .select()
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, parsed.data.id), eq(conversationsTable.userId, auth.userId)));
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
     const messages = await db
       .select()
       .from(messagesTable)
@@ -154,6 +193,8 @@ router.get("/openrouter/conversations/:id/messages", async (req, res) => {
 });
 
 router.post("/openrouter/conversations/:id/messages", async (req, res) => {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
   const paramsParsed = SendOpenrouterMessageParams.safeParse({ id: Number(req.params.id) });
   if (!paramsParsed.success) {
     return res.status(400).json({ error: "Invalid id" });
@@ -173,7 +214,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     const [conv] = await db
       .select()
       .from(conversationsTable)
-      .where(eq(conversationsTable.id, conversationId));
+      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.userId, auth.userId)));
     if (!conv) {
       return res.status(404).json({ error: "Conversation not found" });
     }
@@ -191,7 +232,6 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       .orderBy(messagesTable.createdAt);
 
     const chatMessages = history.map((m) => {
-      // Try to parse structured content with attachments
       let parsed: { text?: string; attachments?: { type: string; data: string }[] } | null = null;
       try {
         const p = JSON.parse(m.content);
