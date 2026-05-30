@@ -186,9 +186,11 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors">
-                  <Settings className="h-5 w-5" />
-                </button>
+                <Link href="/settings">
+                  <button className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors" data-testid="settings-btn">
+                    <Settings className="h-5 w-5" />
+                  </button>
+                </Link>
               </TooltipTrigger>
               <TooltipContent side="right">Settings</TooltipContent>
             </Tooltip>
