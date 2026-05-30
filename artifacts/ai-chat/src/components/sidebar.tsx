@@ -1,15 +1,18 @@
 import { useState, useRef } from "react";
 import { useListOpenrouterConversations, useDeleteOpenrouterConversation, getListOpenrouterConversationsQueryKey } from "@workspace/api-client-react";
-import { Plus, MessageSquare, Trash2 } from "lucide-react";
+import { Plus, MessageSquare, Trash2, Code2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { CodePanel } from "./code-panel";
 
 interface SidebarProps {
   activeId?: number;
   onCloseMobile: () => void;
+  onLoadFile: (filename: string, content: string) => void;
 }
 
 interface SwipeState {
@@ -156,7 +159,9 @@ function ConversationItem({
   );
 }
 
-export function Sidebar({ activeId, onCloseMobile }: SidebarProps) {
+export function Sidebar({ activeId, onCloseMobile, onLoadFile }: SidebarProps) {
+  const [activeTab, setActiveTab] = useState<"chats" | "code">("chats");
+  
   const { data: conversations, isLoading } = useListOpenrouterConversations();
   const deleteConversation = useDeleteOpenrouterConversation();
   const [, setLocation] = useLocation();
@@ -164,7 +169,9 @@ export function Sidebar({ activeId, onCloseMobile }: SidebarProps) {
 
   const handleNew = () => {
     setLocation("/");
-    onCloseMobile();
+    if (window.innerWidth < 768) {
+      onCloseMobile();
+    }
   };
 
   const handleDelete = (id: number) => {
@@ -179,42 +186,105 @@ export function Sidebar({ activeId, onCloseMobile }: SidebarProps) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-sidebar">
-      <div className="p-4 border-b">
-        <Button
-          onClick={handleNew}
-          className="w-full justify-start gap-2"
-          variant="default"
-          data-testid="new-conversation-btn"
-        >
-          <Plus className="h-4 w-4" />
-          New Conversation
-        </Button>
+    <div className="flex h-full w-[272px] bg-sidebar">
+      {/* Icon Rail */}
+      <div className="w-[52px] flex flex-col items-center py-4 border-r border-sidebar-border bg-sidebar gap-4 flex-shrink-0 z-10">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                data-testid="tab-chats"
+                onClick={() => setActiveTab("chats")}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
+                  activeTab === "chats"
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                }`}
+              >
+                <MessageSquare className="h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Chats</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                data-testid="tab-code"
+                onClick={() => setActiveTab("code")}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
+                  activeTab === "code"
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                }`}
+              >
+                <Code2 className="h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Code</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <div className="mt-auto">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors">
+                  <Settings className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Settings</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
-          {isLoading && (
-            <div className="px-2 py-4 text-center text-sm text-muted-foreground">Loading...</div>
-          )}
-
-          {!isLoading && (!conversations || conversations.length === 0) && (
-            <div className="px-2 py-8 text-center text-sm text-muted-foreground">
-              No conversations yet
+      {/* Content Panel */}
+      <div className="flex-1 flex flex-col min-w-0 bg-sidebar">
+        {activeTab === "chats" && (
+          <>
+            <div className="p-4 border-b border-sidebar-border">
+              <Button
+                onClick={handleNew}
+                className="w-full justify-start gap-2"
+                variant="default"
+                data-testid="new-conversation-btn"
+              >
+                <Plus className="h-4 w-4" />
+                New Conversation
+              </Button>
             </div>
-          )}
 
-          {conversations?.map((conv) => (
-            <ConversationItem
-              key={conv.id}
-              conv={conv}
-              isActive={activeId === conv.id}
-              onDelete={handleDelete}
-              onCloseMobile={onCloseMobile}
-            />
-          ))}
-        </div>
-      </ScrollArea>
+            <ScrollArea className="flex-1">
+              <div className="p-2 space-y-1">
+                {isLoading && (
+                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">Loading...</div>
+                )}
+
+                {!isLoading && (!conversations || conversations.length === 0) && (
+                  <div className="px-2 py-8 text-center text-sm text-muted-foreground">
+                    No conversations yet
+                  </div>
+                )}
+
+                {conversations?.map((conv) => (
+                  <ConversationItem
+                    key={conv.id}
+                    conv={conv}
+                    isActive={activeId === conv.id}
+                    onDelete={handleDelete}
+                    onCloseMobile={onCloseMobile}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          </>
+        )}
+
+        {activeTab === "code" && (
+          <CodePanel onLoadFile={onLoadFile} />
+        )}
+      </div>
     </div>
   );
 }

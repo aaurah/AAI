@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 
 interface ChatPaneProps {
   conversationId?: number;
+  prefilledInput?: string;
+  onPrefilledInputClear?: () => void;
 }
 
 const MODELS = [
@@ -36,11 +38,18 @@ const parseMessage = (content: string) => {
   return { text: content, attachments: [] };
 };
 
-export function ChatPane({ conversationId }: ChatPaneProps) {
+export function ChatPane({ conversationId, prefilledInput, onPrefilledInputClear }: ChatPaneProps) {
   const [model, setModel] = useState("llama-3.3");
   const [input, setInput] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  
+  useEffect(() => {
+    if (prefilledInput) {
+      setInput(prefilledInput);
+      onPrefilledInputClear?.();
+    }
+  }, [prefilledInput, onPrefilledInputClear]);
   
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
