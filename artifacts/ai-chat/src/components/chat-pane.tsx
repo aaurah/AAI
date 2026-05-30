@@ -375,9 +375,13 @@ When the user asks about this project, answer based on the repository context ab
     try {
       const systemPrompt = activeRepo ? await buildRepoSystemPrompt(activeRepo) : undefined;
 
+      const authToken = localStorage.getItem("auth_token");
       const res = await fetch(`/api/openrouter/conversations/${targetId}/messages?model=${model}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ content: payloadStr, ...(systemPrompt ? { systemPrompt } : {}) }),
         signal: abortControllerRef.current.signal,
       });

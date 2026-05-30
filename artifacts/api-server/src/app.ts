@@ -25,9 +25,23 @@ app.use(
     },
   }),
 );
-app.use(cors());
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+  : [];
+
+app.use(
+  cors({
+    origin: allowedOrigins.length > 0
+      ? (origin, cb) => {
+          if (!origin || allowedOrigins.includes(origin)) cb(null, true);
+          else cb(new Error("Not allowed by CORS"));
+        }
+      : true,
+    credentials: true,
+  }),
+);
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 app.use("/api", router);
 

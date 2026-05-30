@@ -7,6 +7,9 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import SettingsPage from "@/pages/settings";
 import AdminPanel from "@/pages/admin";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
+
+setAuthTokenGetter(() => localStorage.getItem("auth_token"));
 
 const queryClient = new QueryClient();
 

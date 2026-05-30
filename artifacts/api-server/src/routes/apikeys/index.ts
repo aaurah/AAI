@@ -30,7 +30,7 @@ router.post("/keys", async (req, res) => {
   const { name } = req.body || {};
   if (!name || typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "Key name required" });
   const rawKey = `sk-ai-${crypto.randomBytes(24).toString("hex")}`;
-  const keyHash = await bcrypt.hash(rawKey, 8);
+  const keyHash = await bcrypt.hash(rawKey, 12);
   const keyPrefix = rawKey.slice(0, 12);
   const [created] = await db.insert(apiKeys).values({ userId: auth.userId, name: name.trim(), keyHash, keyPrefix }).returning({ id: apiKeys.id, name: apiKeys.name, keyPrefix: apiKeys.keyPrefix, createdAt: apiKeys.createdAt });
   res.status(201).json({ key: { ...created, rawKey } });
