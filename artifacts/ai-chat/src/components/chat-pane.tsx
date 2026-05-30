@@ -129,28 +129,51 @@ export function ChatPane({ conversationId }: ChatPaneProps) {
     }
   };
 
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 1024;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round((height * MAX) / width); width = MAX; }
+            else { width = Math.round((width * MAX) / height); height = MAX; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.75));
+        };
+        img.src = e.target!.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     const availableSlots = 4 - attachments.length;
     const toAdd = files.slice(0, availableSlots);
-    
-    toAdd.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setAttachments(prev => [...prev, {
-            type: file.type.startsWith("video/") ? "video" : "image",
-            data: event.target!.result as string,
-            file
-          }]);
-        }
-      };
-      reader.readAsDataURL(file);
+
+    toAdd.forEach(async (file) => {
+      if (file.type.startsWith("video/")) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            setAttachments(prev => [...prev, { type: "video", data: event.target!.result as string, file }]);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        const compressed = await compressImage(file);
+        setAttachments(prev => [...prev, { type: "image", data: compressed, file }]);
+      }
     });
-    
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSend = async (overrideContent?: { text: string, attachments: Attachment[] }) => {
