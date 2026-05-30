@@ -144,6 +144,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const userContent = bodyParsed.data.content;
   const modelKey = (req.query.model as string) || "llama-3.3";
   const modelName = MODELS[modelKey] ?? DEFAULT_MODEL;
+  const systemPrompt = (req.body as any).systemPrompt as string | undefined;
 
   try {
     const [conv] = await db
@@ -196,10 +197,14 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
 
     let fullResponse = "";
 
+    const messagesWithSystem = systemPrompt
+      ? [{ role: "system" as const, content: systemPrompt }, ...chatMessages]
+      : chatMessages;
+
     const stream = await openrouter.chat.completions.create({
       model: modelName,
       max_tokens: 8192,
-      messages: chatMessages,
+      messages: messagesWithSystem,
       stream: true,
     });
 

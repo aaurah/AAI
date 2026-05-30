@@ -206,6 +206,8 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [commitMsg, setCommitMsg] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
 
+  const repoPromptCache = useRef<Record<string, string>>({});
+
   const { data: conversation } = useGetOpenrouterConversation(conversationId!, {
     query: { enabled: !!conversationId, queryKey: getGetOpenrouterConversationQueryKey(conversationId!) },
   });
@@ -301,6 +303,45 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const buildRepoSystemPrompt = useCallback(async (repo: RepoContext): Promise<string> => {
+    if (repoPromptCache.current[repo.fullName]) return repoPromptCache.current[repo.fullName];
+    const token = localStorage.getItem("github_token");
+    let readme = "";
+    let fileTree = "";
+    try {
+      const headers: Record<string, string> = { Accept: "application/vnd.github.v3.raw" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const [readmeRes, treeRes] = await Promise.all([
+        fetch(`https://api.github.com/repos/${repo.fullName}/readme`, { headers }),
+        fetch(`https://api.github.com/repos/${repo.fullName}/git/trees/HEAD?recursive=1`, {
+          headers: { ...headers, Accept: "application/vnd.github.v3+json" },
+        }),
+      ]);
+      if (readmeRes.ok) {
+        readme = await readmeRes.text();
+        if (readme.length > 6000) readme = readme.slice(0, 6000) + "\n...(truncated)";
+      }
+      if (treeRes.ok) {
+        const treeData = await treeRes.json() as { tree: { path: string; type: string }[] };
+        const paths = treeData.tree
+          .filter((f) => f.type === "blob" && !f.path.includes("node_modules") && !f.path.startsWith("."))
+          .map((f) => f.path)
+          .slice(0, 200);
+        fileTree = paths.join("\n");
+      }
+    } catch {}
+
+    const prompt = `You are an AI coding assistant with full context of the GitHub repository: ${repo.fullName}.
+Owner: ${repo.owner} | Repo: ${repo.repo}
+
+${readme ? `## README\n\`\`\`\n${readme}\n\`\`\`\n` : ""}${fileTree ? `## File Tree\n\`\`\`\n${fileTree}\n\`\`\`` : ""}
+
+When the user asks about this project, answer based on the repository context above. You can read files, suggest code changes, and help commit code back to the repo. When writing code to be committed, start the code block with \`// File: path/to/file\` so the user can commit it directly.`;
+
+    repoPromptCache.current[repo.fullName] = prompt;
+    return prompt;
+  }, []);
+
   const handleSend = useCallback(async (overrideContent?: { text: string; attachments: Attachment[] }) => {
     const textToSend = overrideContent ? overrideContent.text : input;
     const attachmentsToSend = overrideContent ? overrideContent.attachments : attachments;
@@ -332,10 +373,12 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
     abortControllerRef.current = new AbortController();
 
     try {
+      const systemPrompt = activeRepo ? await buildRepoSystemPrompt(activeRepo) : undefined;
+
       const res = await fetch(`/api/openrouter/conversations/${targetId}/messages?model=${model}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: payloadStr }),
+        body: JSON.stringify({ content: payloadStr, ...(systemPrompt ? { systemPrompt } : {}) }),
         signal: abortControllerRef.current.signal,
       });
       queryClient.invalidateQueries({ queryKey: getListOpenrouterMessagesQueryKey(targetId) });
