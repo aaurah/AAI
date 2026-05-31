@@ -13,7 +13,8 @@ router.get("/health/providers", (_req, res) => {
     openrouter: !!(process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL && process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY),
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     github: !!process.env.GITHUB_TOKEN,
-    ollama: true, // always available (local)
+    copilot: !!process.env.GITHUB_TOKEN, // Copilot uses GITHUB_TOKEN (needs Copilot subscription)
+    ollama: true,
   });
 });
 
