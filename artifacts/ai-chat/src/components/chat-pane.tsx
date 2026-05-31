@@ -287,10 +287,10 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
       const t = setTimeout(() => { handleSendRef.current?.({ text: prefilledInput, attachments: [] }); }, 80);
       onPrefilledInputClear?.();
       return () => clearTimeout(t);
-    } else {
-      setInput(prefilledInput);
-      onPrefilledInputClear?.();
     }
+    setInput(prefilledInput);
+    onPrefilledInputClear?.();
+    return undefined;
   }, [prefilledInput]);
 
   useEffect(() => {

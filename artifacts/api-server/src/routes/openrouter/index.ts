@@ -17,6 +17,20 @@ const router = Router();
 // In-memory cache for Copilot tokens (keyed by GitHub token, value = {token, expiresAt ms})
 const copilotTokenCache = new Map<string, { token: string; expiresAt: number }>();
 
+// Per-user rate limit: max 20 AI messages per minute
+const msgRateLimit = new Map<number, { count: number; resetAt: number }>();
+function checkMsgRateLimit(userId: number): boolean {
+  const now = Date.now();
+  const record = msgRateLimit.get(userId);
+  if (!record || record.resetAt < now) {
+    msgRateLimit.set(userId, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (record.count >= 20) return false;
+  record.count++;
+  return true;
+}
+
 async function requireAuth(req: any, res: any): Promise<{ userId: number } | null> {
   const payload = await verifyToken(req.headers.authorization);
   if (!payload) {
@@ -209,6 +223,9 @@ router.get("/openrouter/conversations/:id/messages", async (req, res) => {
 router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const auth = await requireAuth(req, res);
   if (!auth) return;
+  if (!checkMsgRateLimit(auth.userId)) {
+    return res.status(429).json({ error: "Too many messages. Wait a moment before sending again." });
+  }
   const paramsParsed = SendOpenrouterMessageParams.safeParse({ id: Number(req.params.id) });
   if (!paramsParsed.success) {
     return res.status(400).json({ error: "Invalid id" });
@@ -350,7 +367,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         reader.releaseLock();
       }
 
-      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      try { await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse }); } catch {}
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
       return;
@@ -433,7 +450,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         reader.releaseLock();
       }
 
-      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      try { await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse }); } catch {}
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
       return;
@@ -507,7 +524,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         reader.releaseLock();
       }
 
-      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      try { await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse }); } catch {}
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
       return;
@@ -605,7 +622,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         reader.releaseLock();
       }
 
-      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      try { await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse }); } catch {}
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
       return;
@@ -704,6 +721,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
+    return;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[openrouter] model=${modelName} error:`, err);
@@ -712,6 +730,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     }
     res.write(`data: ${JSON.stringify({ error: errMsg })}\n\n`);
     res.end();
+    return;
   }
 });
 

@@ -63,10 +63,10 @@ router.post("/auth/signup", async (req, res) => {
     const plan = isAdmin ? "business" : "starter";
     const [user] = await db.insert(users).values({ name, email: email.toLowerCase(), passwordHash, plan, isAdmin }).returning();
     const token = signToken(user.id);
-    res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, plan: user.plan, isAdmin: user.isAdmin } });
+    return res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, plan: user.plan, isAdmin: user.isAdmin } });
   } catch (err) {
     console.error("Signup error:", err);
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -82,10 +82,10 @@ router.post("/auth/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return res.status(401).json({ error: "Invalid email or password" });
     const token = signToken(user.id);
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, plan: user.plan, isAdmin: user.isAdmin } });
+    return res.json({ token, user: { id: user.id, name: user.name, email: user.email, plan: user.plan, isAdmin: user.isAdmin } });
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -95,19 +95,27 @@ router.get("/auth/me", async (req, res) => {
   try {
     const [user] = await db.select({ id: users.id, name: users.name, email: users.email, plan: users.plan, isAdmin: users.isAdmin, createdAt: users.createdAt }).from(users).where(eq(users.id, payload.userId)).limit(1);
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json({ user });
+    return res.json({ user });
   } catch {
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
 router.patch("/auth/plan", async (req, res) => {
   const payload = await verifyToken(req.headers.authorization);
   if (!payload) return res.status(401).json({ error: "Unauthorized" });
-  const { plan } = req.body;
-  if (!["starter", "pro", "business"].includes(plan)) return res.status(400).json({ error: "Invalid plan" });
-  const [updated] = await db.update(users).set({ plan }).where(eq(users.id, payload.userId)).returning({ id: users.id, plan: users.plan });
-  res.json({ user: updated });
+  // Only admins can change plans — prevents users from upgrading themselves for free
+  try {
+    const [actor] = await db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, payload.userId)).limit(1);
+    if (!actor?.isAdmin) return res.status(403).json({ error: "Admin access required to change plans" });
+    const { plan, targetUserId } = req.body;
+    if (!["starter", "pro", "business"].includes(plan)) return res.status(400).json({ error: "Invalid plan" });
+    const updateId = typeof targetUserId === "number" ? targetUserId : payload.userId;
+    const [updated] = await db.update(users).set({ plan }).where(eq(users.id, updateId)).returning({ id: users.id, plan: users.plan });
+    return res.json({ user: updated });
+  } catch {
+    return res.status(500).json({ error: "Server error" });
+  }
 });
 
 export default router;
