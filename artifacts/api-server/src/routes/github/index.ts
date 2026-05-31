@@ -5,6 +5,26 @@ const router = Router();
 // Use server-configured client ID if available; otherwise accept from request body (for self-hosted deployments)
 const SERVER_GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID ?? "";
 
+// List available GitHub Models
+router.get("/github/models", async (_req, res) => {
+  const token = process.env.GITHUB_TOKEN ?? "";
+  if (!token) return res.status(400).json({ error: "GITHUB_TOKEN not configured" });
+  try {
+    const response = await fetch("https://models.inference.ai.azure.com/models", {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (!response.ok) return res.status(response.status).json({ error: "Failed to fetch GitHub Models" });
+    const data = await response.json() as any[];
+    // Return only chat-capable models with id and display name
+    const models = data
+      .filter((m: any) => m.task === "chat-completion" || !m.task)
+      .map((m: any) => ({ id: m.name ?? m.id, name: m.friendly_name ?? m.display_name ?? m.name ?? m.id }));
+    return res.json(models);
+  } catch {
+    return res.status(500).json({ error: "Failed to fetch GitHub Models" });
+  }
+});
+
 // Proxy GitHub API calls so the server token is never exposed to the browser
 router.get("/github/repos/:owner/:repo/contents", async (req, res) => {
   const { owner, repo } = req.params;

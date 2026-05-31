@@ -59,12 +59,10 @@ const ANTHROPIC_MODELS = [
   { id: "claude:claude-opus-4-8", name: "Claude Opus 4.8" },
 ];
 
-const GITHUB_MODELS = [
+// Loaded dynamically from /api/github/models
+const GITHUB_MODELS_FALLBACK = [
   { id: "github:gpt-4o", name: "GPT-4o" },
   { id: "github:gpt-4o-mini", name: "GPT-4o mini" },
-  { id: "github:Meta-Llama-3.3-70B-Instruct", name: "Llama 3.3 70B (GitHub)" },
-  { id: "github:Phi-4", name: "Phi-4" },
-  { id: "github:Mistral-Small", name: "Mistral Small (GitHub)" },
 ];
 
 const COPILOT_MODELS = [
@@ -203,6 +201,7 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: Attachment[] } | null>(null);
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string }[]>([]);
+  const [githubModels, setGithubModels] = useState<{ id: string; name: string }[]>(GITHUB_MODELS_FALLBACK);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -226,6 +225,15 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
       .then((r) => r.ok ? r.json() : [])
       .then((data: { id: string; name: string }[]) => {
         if (Array.isArray(data) && data.length > 0) setOllamaModels(data);
+      })
+      .catch(() => {});
+
+    fetch("/api/github/models")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { id: string; name: string }[] | null) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setGithubModels(data.map((m) => ({ id: `github:${m.id}`, name: m.name })));
+        }
       })
       .catch(() => {});
 
@@ -686,7 +694,7 @@ When the user asks about this project, answer based on the repository context ab
               <SelectSeparator />
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
-                {GITHUB_MODELS.map((m) => (
+                {githubModels.map((m) => (
                   <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                 ))}
               </SelectGroup>
