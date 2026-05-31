@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Send, Paperclip, X, ThumbsUp, ThumbsDown, Copy, Share2, Volume2, Mic,
-  StopCircle, Plus, Github, Code2, Check, Search, Loader2, Cloud, ChevronDown,
+  StopCircle, Plus, Github, Code2, Check, Search, Loader2, Cloud,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -538,7 +538,6 @@ When the user asks about this project, answer based on the repository context ab
           <Select value={model} onValueChange={setModel}>
             <SelectTrigger className="border-0 bg-transparent shadow-none focus:ring-0 text-base font-semibold gap-1 w-auto px-0">
               <SelectValue />
-              <ChevronDown className="h-4 w-4 opacity-50" />
             </SelectTrigger>
             <SelectContent>
               {MODELS.map((m) => (
@@ -607,7 +606,7 @@ When the user asks about this project, answer based on the repository context ab
                 <div className={`max-w-[88%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed ${
                   isAssistant ? "bg-muted text-foreground" : "bg-primary text-primary-foreground"
                 } ${likeState === "like" ? "ring-2 ring-green-500 ring-offset-2 ring-offset-background" : ""}
-                   ${likeState === "dislike" ? "ring-2 ring-red-500 ring-offset-2 ring-offset-background" : ""}`}>
+                   ${likeState === "dislike" ? "ring-2 ring-red-500 ring-offset-2 ring-offset-background" : ""}` }>
                   {parsed.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
                       {parsed.attachments.map((att: any, i: number) => (
