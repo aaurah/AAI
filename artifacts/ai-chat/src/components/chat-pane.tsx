@@ -433,7 +433,7 @@ When the user asks about this project, answer based on the repository context ab
         queryClient.invalidateQueries({ queryKey: getGetOpenrouterConversationQueryKey(targetId) });
       }
     }
-  }, [input, attachments, isStreaming, conversationId, model, createConversation, queryClient, setLocation]);
+  }, [input, attachments, isStreaming, conversationId, model, createConversation, queryClient, setLocation, activeRepo, buildRepoSystemPrompt]);
 
   handleSendRef.current = handleSend;
 
