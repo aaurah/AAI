@@ -29,15 +29,16 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
   return { userId: user.id };
 }
 
+// All models use the :free tier so no OpenRouter credits are needed.
 const MODELS: Record<string, string> = {
-  "llama-3.3": "meta-llama/llama-3.3-70b-instruct",
-  "llama-4-scout": "meta-llama/llama-4-scout",
-  "mistral": "mistralai/mistral-small-3.1-24b-instruct",
-  "gemma": "google/gemma-3-27b-it",
-  "qwen": "qwen/qwq-32b",
+  "llama-3.3": "meta-llama/llama-3.3-70b-instruct:free",
+  "llama-4-scout": "meta-llama/llama-4-scout:free",
+  "mistral": "mistralai/mistral-7b-instruct:free",
+  "gemma": "google/gemma-3-27b-it:free",
+  "qwen": "qwen/qwq-32b:free",
 };
 
-const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct";
+const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 const BASE_SYSTEM_PROMPT = `You are an AI coding assistant built into a full-featured AI chat application. Here is everything you need to know about the app and your role:
 
@@ -47,7 +48,7 @@ You are a powerful AI assistant optimized for software development, code review,
 ## App capabilities you can leverage
 - **GitHub integration**: Users can connect any GitHub repository. When a repo is connected, you receive the README and full file tree as context — use this to give accurate, project-specific answers.
 - **Code commits**: When you write code that should be saved to a file, start the code block's first line with \`// File: path/to/file\` (or \`# File: path/to/file\` for Python/shell). A "Commit to GitHub" button will automatically appear, letting the user push your code directly to their repo.
-- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral Small 3.1, Gemma 3 27B, and QwQ-32B.
+- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral 7B, Gemma 3 27B, and QwQ-32B.
 - **Vision**: Image and video attachments are supported (Llama 4 Scout handles images best).
 - **Voice**: Users can speak messages via voice input and hear responses via text-to-speech.
 - **Message actions**: Every message has copy, like/dislike, share, and text-to-speech buttons.
@@ -273,7 +274,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
 
     const stream = await openrouter.chat.completions.create({
       model: modelName,
-      max_tokens: 8192,
+      max_tokens: 4096,
       messages: messagesWithSystem,
       stream: true,
     });

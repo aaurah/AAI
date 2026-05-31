@@ -48,7 +48,7 @@ interface GHRepo {
 const MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
   { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
-  { id: "mistral", name: "Mistral Small 3.1" },
+  { id: "mistral", name: "Mistral 7B" },
   { id: "gemma", name: "Gemma 3 27B" },
   { id: "qwen", name: "QwQ-32B" },
 ];
@@ -433,7 +433,7 @@ When the user asks about this project, answer based on the repository context ab
         queryClient.invalidateQueries({ queryKey: getGetOpenrouterConversationQueryKey(targetId) });
       }
     }
-  }, [input, attachments, isStreaming, conversationId, model, createConversation, queryClient, setLocation, activeRepo, buildRepoSystemPrompt]);
+  }, [input, attachments, isStreaming, conversationId, model, createConversation, queryClient, setLocation]);
 
   handleSendRef.current = handleSend;
 
