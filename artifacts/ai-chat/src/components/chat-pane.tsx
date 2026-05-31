@@ -62,9 +62,9 @@ const ANTHROPIC_MODELS = [
 const GITHUB_MODELS = [
   { id: "github:gpt-4o", name: "GPT-4o" },
   { id: "github:gpt-4o-mini", name: "GPT-4o mini" },
-  { id: "github:meta-llama-3.3-70b-instruct", name: "Llama 3.3 70B (GitHub)" },
+  { id: "github:Meta-Llama-3.3-70B-Instruct", name: "Llama 3.3 70B (GitHub)" },
   { id: "github:Phi-4", name: "Phi-4" },
-  { id: "github:Mistral-small", name: "Mistral Small (GitHub)" },
+  { id: "github:Mistral-Small", name: "Mistral Small (GitHub)" },
 ];
 
 const COPILOT_MODELS = [
