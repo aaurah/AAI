@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -45,12 +45,26 @@ interface GHRepo {
   updated_at: string;
 }
 
-const MODELS = [
+const OPENROUTER_MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
   { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
   { id: "mistral", name: "Mistral 7B" },
   { id: "gemma", name: "Gemma 2 9B" },
   { id: "qwen", name: "QwQ-32B" },
+];
+
+const ANTHROPIC_MODELS = [
+  { id: "claude:claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+  { id: "claude:claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
+  { id: "claude:claude-opus-4-8", name: "Claude Opus 4.8" },
+];
+
+const GITHUB_MODELS = [
+  { id: "github:gpt-4o", name: "GPT-4o" },
+  { id: "github:gpt-4o-mini", name: "GPT-4o mini" },
+  { id: "github:meta-llama-3.3-70b-instruct", name: "Llama 3.3 70B (GitHub)" },
+  { id: "github:Phi-4", name: "Phi-4" },
+  { id: "github:Mistral-small", name: "Mistral Small (GitHub)" },
 ];
 
 type Attachment = { type: "image" | "video"; data: string; file?: File };
@@ -179,12 +193,16 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: Attachment[] } | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string }[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -194,6 +212,20 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const synth = window.speechSynthesis;
 
+  useEffect(() => {
+    fetch("/api/ollama/models")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data) && data.length > 0) setOllamaModels(data);
+      })
+      .catch(() => {});
+
+    fetch("/api/health/providers")
+      .then((r) => r.ok ? r.json() : {})
+      .then((data: Record<string, boolean>) => setProviderStatus(data))
+      .catch(() => {});
+  }, []);
+
   const [activeRepo, setActiveRepo] = useState<RepoContext | null>(() => {
     try { return JSON.parse(localStorage.getItem("active_repo") || "null"); } catch { return null; }
   });
@@ -201,6 +233,8 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
   const [repoPickerOpen, setRepoPickerOpen] = useState(false);
   const [repoSearch, setRepoSearch] = useState("");
+  const [publicRepoInput, setPublicRepoInput] = useState("");
+  const [publicRepoError, setPublicRepoError] = useState<string | null>(null);
 
   const [commitTarget, setCommitTarget] = useState<{ path: string; code: string } | null>(null);
   const [commitMsg, setCommitMsg] = useState("");
@@ -303,40 +337,80 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const connectPublicRepo = async (input: string) => {
+    setPublicRepoError(null);
+    // Accept formats: owner/repo, https://github.com/owner/repo, github.com/owner/repo
+    let fullName = input.trim().replace(/^https?:\/\/github\.com\//, "").replace(/^github\.com\//, "").replace(/\/$/, "");
+    const parts = fullName.split("/");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      setPublicRepoError("Enter a valid repo (e.g. facebook/react)");
+      return;
+    }
+    const [owner, repo] = parts;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+      if (!res.ok) { setPublicRepoError("Repo not found or not public"); return; }
+      const ctx: RepoContext = { fullName: `${owner}/${repo}`, owner, repo };
+      setActiveRepo(ctx);
+      localStorage.setItem("active_repo", JSON.stringify(ctx));
+      setRepoPickerOpen(false);
+      setPublicRepoInput("");
+    } catch { setPublicRepoError("Failed to reach GitHub"); }
+  };
+
   const buildRepoSystemPrompt = useCallback(async (repo: RepoContext): Promise<string> => {
     if (repoPromptCache.current[repo.fullName]) return repoPromptCache.current[repo.fullName];
     const token = localStorage.getItem("github_token");
+    const headers: Record<string, string> = { Accept: "application/vnd.github.v3+json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
     let readme = "";
     let fileTree = "";
+    let keyFileContents = "";
+
     try {
-      const headers: Record<string, string> = { Accept: "application/vnd.github.v3.raw" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
       const [readmeRes, treeRes] = await Promise.all([
-        fetch(`https://api.github.com/repos/${repo.fullName}/readme`, { headers }),
-        fetch(`https://api.github.com/repos/${repo.fullName}/git/trees/HEAD?recursive=1`, {
-          headers: { ...headers, Accept: "application/vnd.github.v3+json" },
-        }),
+        fetch(`https://api.github.com/repos/${repo.fullName}/readme`, { headers: { ...headers, Accept: "application/vnd.github.v3.raw" } }),
+        fetch(`https://api.github.com/repos/${repo.fullName}/git/trees/HEAD?recursive=1`, { headers }),
       ]);
       if (readmeRes.ok) {
         readme = await readmeRes.text();
-        if (readme.length > 6000) readme = readme.slice(0, 6000) + "\n...(truncated)";
+        if (readme.length > 5000) readme = readme.slice(0, 5000) + "\n...(truncated)";
       }
+
+      let allPaths: string[] = [];
       if (treeRes.ok) {
-        const treeData = await treeRes.json() as { tree: { path: string; type: string }[] };
-        const paths = treeData.tree
-          .filter((f) => f.type === "blob" && !f.path.includes("node_modules") && !f.path.startsWith("."))
-          .map((f) => f.path)
-          .slice(0, 200);
-        fileTree = paths.join("\n");
+        const treeData = await treeRes.json() as { tree: { path: string; type: string; size?: number }[] };
+        allPaths = treeData.tree
+          .filter((f) => f.type === "blob" && !f.path.includes("node_modules") && !f.path.startsWith(".") && !f.path.includes("dist/") && !f.path.includes("build/"))
+          .map((f) => f.path);
+        fileTree = allPaths.slice(0, 300).join("\n");
       }
+
+      // Fetch contents of key config/entry files (up to 5, max 3000 chars each)
+      const KEY_PATTERNS = [/^(package\.json|pyproject\.toml|Cargo\.toml|go\.mod|requirements\.txt)$/, /^(src\/index\.|src\/main\.|main\.|app\.|index\.)/];
+      const keyFiles = allPaths.filter((p) => KEY_PATTERNS.some((pat) => pat.test(p))).slice(0, 5);
+      const fileResults = await Promise.allSettled(
+        keyFiles.map((path) =>
+          fetch(`/api/github/repos/${repo.owner}/${repo.repo}/contents?path=${encodeURIComponent(path)}`)
+            .then((r) => r.ok ? r.json() : null)
+        )
+      );
+      const sections: string[] = [];
+      fileResults.forEach((result, i) => {
+        if (result.status === "fulfilled" && result.value?.text) {
+          const content = result.value.text.slice(0, 3000);
+          sections.push(`### ${keyFiles[i]}\n\`\`\`\n${content}${result.value.text.length > 3000 ? "\n...(truncated)" : ""}\n\`\`\``);
+        }
+      });
+      if (sections.length > 0) keyFileContents = sections.join("\n\n");
     } catch {}
 
     const prompt = `You are an AI coding assistant with full context of the GitHub repository: ${repo.fullName}.
 Owner: ${repo.owner} | Repo: ${repo.repo}
 
-${readme ? `## README\n\`\`\`\n${readme}\n\`\`\`\n` : ""}${fileTree ? `## File Tree\n\`\`\`\n${fileTree}\n\`\`\`` : ""}
+${readme ? `## README\n\`\`\`\n${readme}\n\`\`\`\n` : ""}${fileTree ? `## File Tree (${fileTree.split("\n").length} files)\n\`\`\`\n${fileTree}\n\`\`\`\n` : ""}${keyFileContents ? `\n## Key Files\n${keyFileContents}` : ""}
 
-When the user asks about this project, answer based on the repository context above. You can read files, suggest code changes, and help commit code back to the repo. When writing code to be committed, start the code block with \`// File: path/to/file\` so the user can commit it directly.`;
+When the user asks about this project, answer based on the repository context above. If asked to read a specific file, tell the user its path from the file tree. When writing code to be committed, start the code block with \`// File: path/to/file\` so the user can commit it directly.`;
 
     repoPromptCache.current[repo.fullName] = prompt;
     return prompt;
@@ -346,6 +420,7 @@ When the user asks about this project, answer based on the repository context ab
     const textToSend = overrideContent ? overrideContent.text : input;
     const attachmentsToSend = overrideContent ? overrideContent.attachments : attachments;
     if (!textToSend.trim() && attachmentsToSend.length === 0) return;
+    setSendError(null);
 
     if (isStreaming) {
       setQueuedMessage({ text: textToSend, attachments: attachmentsToSend });
@@ -418,6 +493,7 @@ When the user asks about this project, answer based on the repository context ab
     } catch (err: any) {
       if (err.name !== "AbortError") {
         console.error("Stream error:", err);
+        setSendError(err.message || "Failed to get a response. Check your API key and model availability.");
         toast({
           title: "AI Error",
           description: err.message || "Failed to get a response. Check your API key and model availability.",
@@ -547,6 +623,26 @@ When the user asks about this project, answer based on the repository context ab
   const filteredRepos = repos.filter((r) => r.full_name.toLowerCase().includes(repoSearch.toLowerCase()));
   const showSuggestions = !conversationId && messages.length === 0 && !isStreaming;
 
+  const getProviderForModel = (modelId: string): string => {
+    if (modelId.startsWith("claude:")) return "anthropic";
+    if (modelId.startsWith("github:")) return "github";
+    if (modelId.startsWith("ollama:")) return "ollama";
+    return "openrouter";
+  };
+
+  const getProviderWarning = (modelId: string): string | null => {
+    const provider = getProviderForModel(modelId);
+    if (Object.keys(providerStatus).length === 0) return null;
+    if (providerStatus[provider] === false) {
+      if (provider === "anthropic") return "Claude requires ANTHROPIC_API_KEY — set it in Replit Secrets";
+      if (provider === "github") return "GitHub Models requires GITHUB_TOKEN — set it in Replit Secrets";
+      if (provider === "openrouter") return "OpenRouter requires AI_INTEGRATIONS_OPENROUTER_API_KEY — set it in Replit Secrets";
+    }
+    return null;
+  };
+
+  const providerWarning = getProviderWarning(model);
+
   return (
     <div className="flex h-full flex-col bg-background relative">
       {/* Header */}
@@ -557,9 +653,37 @@ When the user asks about this project, answer based on the repository context ab
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Cloud (OpenRouter)</SelectLabel>
+                {OPENROUTER_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Anthropic (Claude)</SelectLabel>
+                {ANTHROPIC_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
+                {GITHUB_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
+              {ollamaModels.length > 0 && (
+                <>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Local (Ollama)</SelectLabel>
+                    {ollamaModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -744,6 +868,22 @@ When the user asks about this project, answer based on the repository context ab
             </div>
           )}
 
+          {/* Inline send error */}
+          {sendError && (
+            <div className="mx-auto max-w-3xl mb-2 px-4 py-2 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm flex items-center justify-between">
+              <span>{sendError}</span>
+              <button onClick={() => setSendError(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+            </div>
+          )}
+
+          {/* Provider warning */}
+          {providerWarning && (
+            <div className="mx-auto max-w-3xl mb-2 px-4 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
+              <Cloud className="h-4 w-4 shrink-0" />
+              <span>{providerWarning}</span>
+            </div>
+          )}
+
           {/* Input card */}
           <div className="rounded-xl border bg-background shadow-sm focus-within:ring-1 focus-within:ring-primary transition-shadow overflow-hidden">
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" multiple onChange={handleFileChange} />
@@ -824,17 +964,37 @@ When the user asks about this project, answer based on the repository context ab
               )}
             </ScrollArea>
 
-            <div className="p-4 border-t shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search"
-                  value={repoSearch}
-                  onChange={(e) => setRepoSearch(e.target.value)}
-                  className="pl-9 bg-muted/40 border-0 focus-visible:ring-1"
-                  data-testid="repo-picker-search"
-                  autoFocus
-                />
+            <div className="p-4 border-t shrink-0 space-y-3">
+              {hasToken && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search your repos"
+                    value={repoSearch}
+                    onChange={(e) => setRepoSearch(e.target.value)}
+                    className="pl-9 bg-muted/40 border-0 focus-visible:ring-1"
+                    data-testid="repo-picker-search"
+                    autoFocus={hasToken}
+                  />
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground font-medium px-0.5">Connect any public repo</p>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="owner/repo or github.com/owner/repo"
+                    value={publicRepoInput}
+                    onChange={(e) => { setPublicRepoInput(e.target.value); setPublicRepoError(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") connectPublicRepo(publicRepoInput); }}
+                    className="bg-muted/40 border-0 focus-visible:ring-1 text-sm"
+                    autoFocus={!hasToken}
+                    data-testid="public-repo-input"
+                  />
+                  <Button size="sm" onClick={() => connectPublicRepo(publicRepoInput)} disabled={!publicRepoInput.trim()}>
+                    Connect
+                  </Button>
+                </div>
+                {publicRepoError && <p className="text-xs text-destructive px-0.5">{publicRepoError}</p>}
               </div>
             </div>
           </div>

@@ -47,7 +47,7 @@ You are a powerful AI assistant optimized for software development, code review,
 ## App capabilities you can leverage
 - **GitHub integration**: Users can connect any GitHub repository. When a repo is connected, you receive the README and full file tree as context — use this to give accurate, project-specific answers.
 - **Code commits**: When you write code that should be saved to a file, start the code block's first line with \`// File: path/to/file\` (or \`# File: path/to/file\` for Python/shell). A "Commit to GitHub" button will automatically appear, letting the user push your code directly to their repo.
-- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral 7B, Gemma 2 9B, and QwQ-32B.
+- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral 7B, Gemma 2 9B, QwQ-32B, Claude Sonnet, Claude Haiku (via Anthropic API), and GitHub-hosted models (GPT-4o, Llama, Phi, etc.). Local models via Ollama are also supported when pulled to the server.
 - **Vision**: Image and video attachments are supported (Llama 4 Scout handles images best).
 - **Voice**: Users can speak messages via voice input and hear responses via text-to-speech.
 - **Message actions**: Every message has copy, like/dislike, share, and text-to-speech buttons.
@@ -60,7 +60,16 @@ You are a powerful AI assistant optimized for software development, code review,
 - If a GitHub repo is connected (you'll see repo context below), answer questions specifically about that codebase — reference actual files, functions, and patterns from the repo.
 - If no repo is connected, give general best-practice advice.
 - Format code in proper fenced code blocks with the correct language tag.
-- When a user asks what you can do or what this app does, explain the features above.`;
+- When a user asks what you can do or what this app does, explain the features above.
+
+## AI coding tools you can recommend
+When users ask about AI coding assistant options, you can recommend:
+- **GitHub Copilot** — IDE extension (VS Code, JetBrains, etc.) for inline code completions and chat. Requires a GitHub Copilot subscription.
+- **Claude (claude.ai / Anthropic)** — Available directly in this chat app under the "Anthropic" model group. Also available as a VS Code extension via Cursor or claude.ai.
+- **Cursor** — An AI-first IDE (fork of VS Code) with deep code understanding, multi-file edits, and chat. Uses Claude and GPT-4 under the hood. Download at cursor.sh.
+- **Codeium** — Free AI code completion and chat for VS Code, JetBrains, and more. Download at codeium.com.
+- **GitHub Models** — Azure-hosted models (GPT-4o, Llama, Phi, Mistral) accessible with a GitHub token — available in this app under the "GitHub Models" group.`;
+
 
 router.get("/openrouter/conversations", async (req, res) => {
   const auth = await requireAuth(req, res);
@@ -209,19 +218,17 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const conversationId = paramsParsed.data.id;
   const userContent = bodyParsed.data.content;
   const modelKey = (req.query.model as string) || "llama-3.3";
-  const modelName = MODELS[modelKey] ?? DEFAULT_MODEL;
+  const isOllama = modelKey.startsWith("ollama:");
+  const isAnthropic = modelKey.startsWith("claude:");
+  const isGitHub = modelKey.startsWith("github:");
+  const modelName = isOllama
+    ? modelKey.slice("ollama:".length)
+    : isAnthropic
+      ? modelKey.slice("claude:".length)
+      : isGitHub
+        ? modelKey.slice("github:".length)
+        : (MODELS[modelKey] ?? DEFAULT_MODEL);
   const systemPrompt = (req.body as any).systemPrompt as string | undefined;
-
-  // Read OpenRouter config from env — checked at request time so we can return
-  // a clear error rather than crashing at startup.
-  const orBaseUrl = (process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL ?? "").replace(/\/$/, "");
-  const orApiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ?? "";
-
-  if (!orBaseUrl || !orApiKey) {
-    return res.status(500).json({
-      error: "OpenRouter is not configured. Set AI_INTEGRATIONS_OPENROUTER_BASE_URL and AI_INTEGRATIONS_OPENROUTER_API_KEY in Replit Secrets.",
-    });
-  }
 
   try {
     const [conv] = await db
@@ -275,6 +282,240 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       { role: "system" as const, content: fullSystemPrompt },
       ...chatMessages,
     ];
+
+    // ── Ollama (local) branch ──
+    if (isOllama) {
+      const ollamaUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
+      const ollamaResponse = await fetch(`${ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelName,
+          messages: messagesWithSystem.map((m: { role: string; content: string | unknown[] }) => ({
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          })),
+          stream: true,
+        }),
+      });
+
+      if (!ollamaResponse.ok) {
+        const raw = await ollamaResponse.text().catch(() => "");
+        console.error(`[ollama] model=${modelName} HTTP ${ollamaResponse.status}: ${raw}`);
+        return res.status(502).json({ error: `Ollama ${ollamaResponse.status}: ${raw.slice(0, 300)}` });
+      }
+
+      if (!ollamaResponse.body) {
+        return res.status(502).json({ error: "Ollama returned an empty response body" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const reader = (ollamaResponse.body as any).getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+      let buf = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
+          if (done) break;
+          if (!value) continue;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const chunk = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
+              const c = chunk.message?.content;
+              if (c) {
+                fullResponse += c;
+                res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+              }
+            } catch {
+              // skip malformed line
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // ── Anthropic (Claude) branch ──
+    if (isAnthropic) {
+      const anthropicKey = process.env.ANTHROPIC_API_KEY ?? "";
+      if (!anthropicKey) {
+        return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured." });
+      }
+
+      const anthropicMessages = chatMessages.map((m: { role: string; content: string | unknown[] }) => ({
+        role: m.role === "system" ? "user" : m.role,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+      }));
+
+      const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: modelName,
+          max_tokens: 4096,
+          stream: true,
+          system: fullSystemPrompt,
+          messages: anthropicMessages,
+        }),
+      });
+
+      if (!anthropicResponse.ok) {
+        const raw = await anthropicResponse.text().catch(() => "");
+        console.error(`[anthropic] model=${modelName} HTTP ${anthropicResponse.status}: ${raw}`);
+        return res.status(502).json({ error: `Anthropic ${anthropicResponse.status}: ${raw.slice(0, 300)}` });
+      }
+
+      if (!anthropicResponse.body) {
+        return res.status(502).json({ error: "Anthropic returned an empty response body" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const reader = (anthropicResponse.body as any).getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+      let buf = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
+          if (done) break;
+          if (!value) continue;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const d = line.slice(6).trim();
+            if (!d || d === "[DONE]") continue;
+            try {
+              const chunk = JSON.parse(d) as { type?: string; delta?: { type?: string; text?: string } };
+              if (chunk.type === "content_block_delta" && chunk.delta?.type === "text_delta") {
+                const c = chunk.delta.text ?? "";
+                if (c) {
+                  fullResponse += c;
+                  res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+                }
+              }
+            } catch {
+              // skip malformed SSE line
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // ── GitHub Models branch (OpenAI-compatible) ──
+    if (isGitHub) {
+      const ghToken = process.env.GITHUB_TOKEN ?? "";
+      if (!ghToken) {
+        return res.status(500).json({ error: "GITHUB_TOKEN is not configured." });
+      }
+
+      const ghResponse = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ghToken}`,
+        },
+        body: JSON.stringify({
+          model: modelName,
+          max_tokens: 4096,
+          messages: messagesWithSystem,
+          stream: true,
+        }),
+      });
+
+      if (!ghResponse.ok) {
+        const raw = await ghResponse.text().catch(() => "");
+        console.error(`[github-models] model=${modelName} HTTP ${ghResponse.status}: ${raw}`);
+        return res.status(502).json({ error: `GitHub Models ${ghResponse.status}: ${raw.slice(0, 300)}` });
+      }
+
+      if (!ghResponse.body) {
+        return res.status(502).json({ error: "GitHub Models returned an empty response body" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const reader = (ghResponse.body as any).getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let fullResponse = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
+          if (done) break;
+          if (!value) continue;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const d = line.slice(6).trim();
+            if (!d || d === "[DONE]") continue;
+            try {
+              const chunk = JSON.parse(d) as { choices?: { delta?: { content?: string } }[] };
+              const c = chunk.choices?.[0]?.delta?.content;
+              if (c) {
+                fullResponse += c;
+                res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+              }
+            } catch {
+              // skip malformed SSE line
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // ── OpenRouter branch ──
+    const orBaseUrl = (process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL ?? "").replace(/\/$/, "");
+    const orApiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ?? "";
+
+    if (!orBaseUrl || !orApiKey) {
+      return res.status(500).json({
+        error: "OpenRouter is not configured. Set AI_INTEGRATIONS_OPENROUTER_BASE_URL and AI_INTEGRATIONS_OPENROUTER_API_KEY in Replit Secrets.",
+      });
+    }
 
     // ── Direct fetch to OpenRouter (bypasses SDK to expose raw HTTP status) ──
     const orResponse = await fetch(`${orBaseUrl}/chat/completions`, {
