@@ -8,4 +8,13 @@ router.get("/healthz", (_req, res) => {
   res.json(data);
 });
 
+router.get("/health/providers", (_req, res) => {
+  res.json({
+    openrouter: !!(process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL && process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY),
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    github: !!process.env.GITHUB_TOKEN,
+    ollama: true, // always available (local)
+  });
+});
+
 export default router;
