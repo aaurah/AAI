@@ -14,6 +14,9 @@ import { verifyToken } from "../auth";
 
 const router = Router();
 
+// In-memory cache for Copilot tokens (keyed by GitHub token, value = {token, expiresAt ms})
+const copilotTokenCache = new Map<string, { token: string; expiresAt: number }>();
+
 async function requireAuth(req: any, res: any): Promise<{ userId: number } | null> {
   const payload = await verifyToken(req.headers.authorization);
   if (!payload) {
@@ -221,13 +224,16 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const isOllama = modelKey.startsWith("ollama:");
   const isAnthropic = modelKey.startsWith("claude:");
   const isGitHub = modelKey.startsWith("github:");
+  const isCopilot = modelKey.startsWith("copilot:");
   const modelName = isOllama
     ? modelKey.slice("ollama:".length)
     : isAnthropic
       ? modelKey.slice("claude:".length)
       : isGitHub
         ? modelKey.slice("github:".length)
-        : (MODELS[modelKey] ?? DEFAULT_MODEL);
+        : isCopilot
+          ? modelKey.slice("copilot:".length)
+          : (MODELS[modelKey] ?? DEFAULT_MODEL);
   const systemPrompt = (req.body as any).systemPrompt as string | undefined;
 
   try {
@@ -469,6 +475,104 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       res.setHeader("Connection", "keep-alive");
 
       const reader = (ghResponse.body as any).getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let fullResponse = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
+          if (done) break;
+          if (!value) continue;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const d = line.slice(6).trim();
+            if (!d || d === "[DONE]") continue;
+            try {
+              const chunk = JSON.parse(d) as { choices?: { delta?: { content?: string } }[] };
+              const c = chunk.choices?.[0]?.delta?.content;
+              if (c) {
+                fullResponse += c;
+                res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+              }
+            } catch {
+              // skip malformed SSE line
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // ── GitHub Copilot branch ──
+    if (isCopilot) {
+      const ghToken = (req.headers["x-github-token"] as string) || (process.env.GITHUB_TOKEN ?? "");
+      if (!ghToken) {
+        return res.status(500).json({ error: "GitHub Copilot requires a GitHub token. Connect GitHub in Settings or set GITHUB_TOKEN in Replit Secrets." });
+      }
+
+      // Exchange GitHub token for a short-lived Copilot token (cached ~28 min)
+      const cached = copilotTokenCache.get(ghToken);
+      let copilotToken: string;
+      if (cached && cached.expiresAt > Date.now() + 60_000) {
+        copilotToken = cached.token;
+      } else {
+        const tokenRes = await fetch("https://api.github.com/copilot_internal/v2/token", {
+          headers: {
+            Authorization: `Bearer ${ghToken}`,
+            "User-Agent": "AAI-Chat/1.0",
+          },
+        });
+        if (!tokenRes.ok) {
+          const raw = await tokenRes.text().catch(() => "");
+          return res.status(502).json({ error: `Copilot token exchange failed (${tokenRes.status}). Make sure you have a GitHub Copilot subscription. ${raw.slice(0, 200)}` });
+        }
+        const tokenData = (await tokenRes.json()) as { token: string; expires_at: number };
+        copilotToken = tokenData.token;
+        copilotTokenCache.set(ghToken, { token: copilotToken, expiresAt: tokenData.expires_at * 1000 });
+      }
+
+      const copilotResponse = await fetch("https://api.githubcopilot.com/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${copilotToken}`,
+          "Content-Type": "application/json",
+          "Editor-Version": "vscode/1.95.0",
+          "Editor-Plugin-Version": "copilot-chat/0.22.0",
+          "Copilot-Integration-Id": "vscode-chat",
+        },
+        body: JSON.stringify({
+          model: modelName,
+          max_tokens: 4096,
+          messages: messagesWithSystem,
+          stream: true,
+        }),
+      });
+
+      if (!copilotResponse.ok) {
+        const raw = await copilotResponse.text().catch(() => "");
+        console.error(`[copilot] model=${modelName} HTTP ${copilotResponse.status}: ${raw}`);
+        return res.status(502).json({ error: `Copilot ${copilotResponse.status}: ${raw.slice(0, 300)}` });
+      }
+
+      if (!copilotResponse.body) {
+        return res.status(502).json({ error: "Copilot returned an empty response body" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const reader = (copilotResponse.body as any).getReader();
       const decoder = new TextDecoder();
       let buf = "";
       let fullResponse = "";
