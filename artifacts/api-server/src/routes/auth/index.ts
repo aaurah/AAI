@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
@@ -6,12 +7,34 @@ import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router = Router();
-if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
-  throw new Error("JWT_SECRET environment variable must be set in production");
+
+if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET environment variable must be set in production");
+  }
+  console.warn("[auth] JWT_SECRET not set — using a random secret. Tokens will be invalidated on every server restart. Set JWT_SECRET in Replit Secrets for persistent sessions.");
 }
-export const JWT_SECRET = process.env.JWT_SECRET || "dev_jwt_secret_change_in_production";
+export const JWT_SECRET = process.env.JWT_SECRET || randomBytes(32).toString("hex");
+
 const SALT_ROUNDS = 10;
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
+
+// Simple in-memory rate limiter for auth endpoints (max 10 attempts per IP per 15 min)
+const authAttempts = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 10;
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const record = authAttempts.get(ip);
+  if (!record || record.resetAt < now) {
+    authAttempts.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (record.count >= RATE_LIMIT) return false;
+  record.count++;
+  return true;
+}
 
 export function signToken(userId: number) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
@@ -25,10 +48,13 @@ export async function verifyToken(authHeader: string | undefined): Promise<{ use
 }
 
 router.post("/auth/signup", async (req, res) => {
+  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(ip)) return res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
+
   const { name, email, password } = req.body || {};
   if (!name || typeof name !== "string" || name.length < 2) return res.status(400).json({ error: "Name must be at least 2 characters" });
   if (!email || typeof email !== "string" || !email.includes("@")) return res.status(400).json({ error: "Valid email required" });
-  if (!password || typeof password !== "string" || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (!password || typeof password !== "string" || password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
   try {
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email.toLowerCase())).limit(1);
     if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
@@ -45,6 +71,9 @@ router.post("/auth/signup", async (req, res) => {
 });
 
 router.post("/auth/login", async (req, res) => {
+  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(ip)) return res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
+
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
   try {
