@@ -73,6 +73,7 @@ router.get("/openrouter/conversations", async (req, res) => {
       .orderBy(desc(conversationsTable.createdAt));
     res.json(conversations);
   } catch (err) {
+    console.error("[GET /conversations]", err);
     res.status(500).json({ error: "Failed to list conversations" });
   }
 });
@@ -91,6 +92,7 @@ router.post("/openrouter/conversations", async (req, res) => {
       .returning();
     return res.status(201).json(conv);
   } catch (err) {
+    console.error("[POST /conversations]", err);
     return res.status(500).json({ error: "Failed to create conversation" });
   }
 });
