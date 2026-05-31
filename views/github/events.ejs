@@ -1,0 +1,114 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="page-title mb-0"><i class="fa-brands fa-github me-2"></i>GitHub Events <span class="badge bg-secondary fs-6"><%= count %></span></h2>
+  <div class="d-flex gap-2">
+    <% if (githubOAuthEnabled) { %>
+      <% if (!currentUser.githubUsername) { %>
+      <a href="/github/connect" class="btn btn-sm btn-outline-secondary"><i class="fa-brands fa-github me-1"></i>Connect GitHub</a>
+      <% } else { %>
+      <span class="badge bg-dark p-2"><i class="fa-brands fa-github me-1 text-success"></i>@<%= currentUser.githubUsername %></span>
+      <% } %>
+    <% } %>
+  </div>
+</div>
+
+<!-- Webhook Setup Info -->
+<% if (count === 0) { %>
+<div class="card card-dark mb-4 border-warning">
+  <div class="card-body">
+    <h5><i class="fa-solid fa-webhook me-2 text-warning"></i>Set Up GitHub Webhook</h5>
+    <p class="text-muted mb-3">To receive GitHub events, configure a webhook in your GitHub repository:</p>
+    <ol class="text-muted small mb-3">
+      <li>Go to your GitHub repo → <strong>Settings → Webhooks → Add webhook</strong></li>
+      <li>Set Payload URL to: <code class="text-info"><%= webhookUrl %></code></li>
+      <li>Content type: <code>application/json</code></li>
+      <% if (webhookConfigured) { %><li class="text-success"><i class="fa-solid fa-check me-1"></i>Webhook secret is configured ✓</li>
+      <% } else { %><li class="text-warning">Set <code>GITHUB_WEBHOOK_SECRET</code> in your .env for security</li><% } %>
+      <li>Select events: Push, Pull requests, Issues, Releases, Workflow runs (or "Send me everything")</li>
+    </ol>
+    <div class="input-group" style="max-width:480px">
+      <input type="text" class="form-control form-control-sm" value="<%= webhookUrl %>" readonly id="webhookUrlInput" />
+      <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText('<%= webhookUrl %>');this.textContent='Copied!'">Copy</button>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<!-- Filter -->
+<div class="card card-dark mb-4">
+  <div class="card-body py-3">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <select name="type" class="form-select form-select-sm">
+          <option value="">All Event Types</option>
+          <% eventTypes.forEach(t => { %>
+          <option value="<%= t %>" <%= typeFilter === t ? 'selected' : '' %>><%= t %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+        <a href="/github/events" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card card-dark">
+  <div class="card-body p-0">
+    <% if (events.length) { %>
+    <div class="list-group list-group-flush">
+      <% events.forEach(ev => { %>
+      <div class="list-group-item list-group-item-dark d-flex align-items-start gap-3 py-3">
+        <% if (ev.senderAvatar) { %>
+        <img src="<%= ev.senderAvatar %>" class="avatar-sm mt-1 flex-shrink-0" alt="<%= ev.sender %>" />
+        <% } else { %>
+        <div class="avatar-sm mt-1 flex-shrink-0 d-flex align-items-center justify-content-center rounded-circle" style="background:#21262d">
+          <i class="fa-brands fa-github"></i>
+        </div>
+        <% } %>
+        <div class="flex-grow-1 min-w-0">
+          <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+            <span class="badge bg-dark text-muted border"><%= ev.eventType %></span>
+            <% if (ev.action) { %><span class="badge bg-secondary"><%= ev.action %></span><% } %>
+            <% if (ev.repository) { %><code class="small text-muted"><%= ev.repository %></code><% } %>
+          </div>
+          <div class="fw-semibold mb-1">
+            <% if (ev.url) { %><a href="<%= ev.url %>" target="_blank" class="text-light text-decoration-none"><%= ev.title %><i class="fa-solid fa-arrow-up-right-from-square ms-1 text-muted" style="font-size:.65rem"></i></a>
+            <% } else { %><%= ev.title %><% } %>
+          </div>
+          <% if (ev.description) { %>
+          <p class="text-muted small mb-1" style="max-width:600px"><%= ev.description.slice(0, 150) %><%= ev.description.length > 150 ? '…' : '' %></p>
+          <% } %>
+          <div class="text-muted" style="font-size:.72rem">
+            <% if (ev.sender) { %><i class="fa-brands fa-github me-1"></i>@<%= ev.sender %> &nbsp;•&nbsp;<% } %>
+            <%= moment(ev.createdAt).format('MMM D, YYYY HH:mm') %> (<%= moment(ev.createdAt).fromNow() %>)
+          </div>
+        </div>
+      </div>
+      <% }) %>
+    </div>
+    <% } else { %>
+    <div class="text-center text-muted py-5">
+      <i class="fa-brands fa-github" style="font-size:3rem;opacity:.3"></i>
+      <p class="mt-3">No GitHub events received yet.</p>
+    </div>
+    <% } %>
+  </div>
+
+  <% if (pages > 1) { %>
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <span class="text-muted small">Page <%= page %> of <%= pages %></span>
+    <nav><ul class="pagination pagination-sm mb-0">
+      <% if (page > 1) { %><li class="page-item"><a class="page-link" href="?page=<%= page-1 %>&type=<%= typeFilter %>">‹</a></li><% } %>
+      <% for (let i = Math.max(1, page-2); i <= Math.min(pages, page+2); i++) { %>
+      <li class="page-item <%= i === page ? 'active' : '' %>"><a class="page-link" href="?page=<%= i %>&type=<%= typeFilter %>"><%= i %></a></li>
+      <% } %>
+      <% if (page < pages) { %><li class="page-item"><a class="page-link" href="?page=<%= page+1 %>&type=<%= typeFilter %>">›</a></li><% } %>
+    </ul></nav>
+  </div>
+  <% } %>
+</div>
+
+<%- include('../partials/footer') %>

@@ -2,12 +2,16 @@
 
 <div class="d-flex align-items-center justify-content-between mb-4">
   <h2 class="page-title mb-0"><i class="fa-solid fa-scroll me-2"></i>Audit Log <span class="badge bg-secondary fs-6"><%= count.toLocaleString() %></span></h2>
+  <a href="/audit/export.csv?action=<%= filters.action||'' %>&user=<%= filters.user||'' %>&status=<%= filters.status||'' %>&severity=<%= filters.severity||'' %>&from=<%= filters.from||'' %>&to=<%= filters.to||'' %>"
+    class="btn btn-sm btn-outline-secondary">
+    <i class="fa-solid fa-file-csv me-1"></i>Export CSV
+  </a>
 </div>
 
 <!-- Filters -->
 <div class="card card-dark mb-4">
   <div class="card-body py-3">
-    <form method="GET" action="/audit" class="row g-2 align-items-end">
+    <form method="GET" action="/audit" class="row g-2 align-items-end flex-wrap">
       <div class="col-sm-3">
         <input type="text" name="action" class="form-control form-control-sm" placeholder="Action (e.g. login)" value="<%= filters.action || '' %>" />
       </div>
@@ -48,33 +52,29 @@
     <div class="table-responsive">
       <table class="table table-dark table-hover table-sm align-middle mb-0">
         <thead>
-          <tr>
-            <th>Time</th><th>Action</th><th>User</th><th>Resource</th><th>Status</th><th>Severity</th><th>IP</th>
-          </tr>
+          <tr><th>Time</th><th>Action</th><th>User</th><th>Resource</th><th>Status</th><th>Severity</th><th>IP</th></tr>
         </thead>
         <tbody>
-          <% logs.forEach(log => { %>
+          <% logs.forEach(entry => { %>
           <tr>
-            <td class="text-muted" style="white-space:nowrap">
-              <span title="<%= log.createdAt %>"><%= moment(log.createdAt).format('MMM D HH:mm:ss') %></span>
+            <td class="text-muted" style="white-space:nowrap;font-size:.75rem">
+              <span title="<%= entry.createdAt %>"><%= moment(entry.createdAt).format('MMM D HH:mm:ss') %></span>
             </td>
-            <td><code class="text-info small"><%= log.action %></code></td>
+            <td><code class="text-info small"><%= entry.action %></code></td>
             <td>
-              <% if (log.user) { %>
-              <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(log.username) %>&background=3b4a6b&color=fff&size=20" class="avatar-xs me-1" alt="" />
+              <% if (entry.user && entry.user.githubAvatar) { %>
+              <img src="<%= entry.user.githubAvatar %>" class="avatar-xs me-1" alt="" />
               <% } %>
-              <span class="small"><%= log.username || '—' %></span>
+              <span class="small"><%= entry.username || '—' %></span>
             </td>
             <td class="small text-muted">
-              <% if (log.resource) { %><%= log.resource %><% if (log.resourceId) { %>:<span class="text-warning"><%= log.resourceId %></span><% } %><% } else { %>—<% } %>
+              <% if (entry.resource) { %><%= entry.resource %><% if (entry.resourceId) { %>:<span class="text-warning"><%= entry.resourceId %></span><% } %><% } else { %>—<% } %>
             </td>
             <td>
-              <span class="badge bg-<%= log.status === 'success' ? 'success' : log.status === 'failure' ? 'danger' : 'warning' %>">
-                <%= log.status %>
-              </span>
+              <span class="badge bg-<%= entry.status === 'success' ? 'success' : entry.status === 'failure' ? 'danger' : 'warning' %>"><%= entry.status %></span>
             </td>
-            <td><span class="badge sev-<%= log.severity %>"><%= log.severity %></span></td>
-            <td class="text-muted small"><%= log.ipAddress || '—' %></td>
+            <td><span class="badge sev-<%= entry.severity %>"><%= entry.severity %></span></td>
+            <td class="text-muted small"><%= entry.ipAddress || '—' %></td>
           </tr>
           <% }) %>
           <% if (!logs.length) { %>
@@ -90,8 +90,7 @@
     <span class="text-muted small">Page <%= page %> of <%= pages %> (<%= count.toLocaleString() %> total)</span>
     <nav><ul class="pagination pagination-sm mb-0">
       <% if (page > 1) { %><li class="page-item"><a class="page-link" href="?page=<%= page-1 %>">‹</a></li><% } %>
-      <% const start = Math.max(1, page-2), end = Math.min(pages, page+2); %>
-      <% for (let i = start; i <= end; i++) { %>
+      <% for (let i = Math.max(1, page-2); i <= Math.min(pages, page+2); i++) { %>
       <li class="page-item <%= i === page ? 'active' : '' %>">
         <a class="page-link" href="?page=<%= i %>&action=<%= filters.action||'' %>&user=<%= filters.user||'' %>&status=<%= filters.status||'' %>&severity=<%= filters.severity||'' %>"><%= i %></a>
       </li>

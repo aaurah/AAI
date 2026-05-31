@@ -5,8 +5,8 @@
   <span class="text-muted small">Welcome back, <strong><%= currentUser.fullName() %></strong></span>
 </div>
 
-<!-- KPI Cards -->
-<div class="row g-3 mb-4">
+<!-- KPI Cards Row 1 -->
+<div class="row g-3 mb-3">
   <div class="col-sm-6 col-xl-3">
     <div class="kpi-card kpi-blue">
       <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
@@ -23,7 +23,7 @@
       <div class="kpi-body">
         <div class="kpi-label">Roles</div>
         <div class="kpi-value"><%= stats.totalRoles %></div>
-        <div class="kpi-sub">role definitions</div>
+        <div class="kpi-sub">defined roles</div>
       </div>
     </div>
   </div>
@@ -38,26 +38,53 @@
     </div>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <div class="kpi-card kpi-purple">
-      <div class="kpi-icon"><i class="fa-solid fa-scroll"></i></div>
+    <div class="kpi-card kpi-red">
+      <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
       <div class="kpi-body">
-        <div class="kpi-label">Audit Events (30d)</div>
-        <div class="kpi-value"><%= activityData ? JSON.parse(activityData).reduce((a,b) => a + parseInt(b), 0) : 0 %></div>
-        <div class="kpi-sub">logged actions</div>
+        <div class="kpi-label">Failed Logins (24h)</div>
+        <div class="kpi-value"><%= stats.failedLoginsToday %></div>
+        <div class="kpi-sub"><%= stats.newUsersToday %> new user(s) today</div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="row g-4">
-  <!-- Activity Chart -->
+<div class="row g-4 mb-4">
+  <!-- Activity Line Chart -->
   <div class="col-lg-8">
     <div class="card card-dark h-100">
       <div class="card-header d-flex align-items-center justify-content-between">
         <h5 class="mb-0"><i class="fa-solid fa-chart-line me-2 text-primary"></i>Activity — Last 30 Days</h5>
+        <span class="badge bg-secondary"><%= stats.totalAuditEvents30d %> events</span>
       </div>
-      <div class="card-body">
-        <canvas id="activityChart" height="250"></canvas>
+      <div class="card-body" style="position:relative;min-height:220px">
+        <canvas id="activityChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Severity Doughnut -->
+  <div class="col-lg-4">
+    <div class="card card-dark h-100">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fa-solid fa-chart-pie me-2 text-warning"></i>Severity Breakdown</h5>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="min-height:220px">
+        <canvas id="severityChart" style="max-height:180px"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Role Distribution -->
+  <div class="col-lg-4">
+    <div class="card card-dark h-100">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fa-solid fa-user-shield me-2 text-info"></i>Role Distribution</h5>
+      </div>
+      <div class="card-body" style="position:relative;min-height:180px">
+        <canvas id="roleChart" style="max-height:180px"></canvas>
       </div>
     </div>
   </div>
@@ -70,13 +97,13 @@
       </div>
       <div class="card-body p-0">
         <ul class="list-group list-group-flush list-dark">
-          <% recentLogins.forEach(log => { %>
+          <% recentLogins.forEach(entry => { %>
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center gap-2">
-              <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(log.username) %>&background=3b4a6b&color=fff&size=28" class="avatar-xs" alt="" />
-              <span class="small"><%= log.username %></span>
+              <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(entry.username) %>&background=3b4a6b&color=fff&size=24" class="avatar-xs" alt="" />
+              <span class="small"><%= entry.username %></span>
             </div>
-            <span class="text-muted" style="font-size:.75rem"><%= moment(log.createdAt).fromNow() %></span>
+            <span class="text-muted" style="font-size:.72rem"><%= moment(entry.createdAt).fromNow() %></span>
           </li>
           <% }) %>
           <% if (!recentLogins.length) { %>
@@ -87,45 +114,75 @@
     </div>
   </div>
 
-  <!-- Audit Feed -->
-  <div class="col-12">
-    <div class="card card-dark">
+  <!-- GitHub Events -->
+  <div class="col-lg-4">
+    <div class="card card-dark h-100">
       <div class="card-header d-flex align-items-center justify-content-between">
-        <h5 class="mb-0"><i class="fa-solid fa-timeline me-2 text-warning"></i>Recent Activity</h5>
-        <a href="/audit" class="btn btn-sm btn-outline-secondary">View All</a>
+        <h5 class="mb-0"><i class="fa-brands fa-github me-2"></i>GitHub Activity</h5>
+        <a href="/github/events" class="btn btn-sm btn-outline-secondary">All</a>
       </div>
       <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-dark table-hover table-sm mb-0">
-            <thead><tr><th>Action</th><th>User</th><th>Status</th><th>Severity</th><th>Time</th></tr></thead>
-            <tbody>
-              <% recentLogs.forEach(log => { %>
-              <tr>
-                <td><code class="text-info"><%= log.action %></code></td>
-                <td>
-                  <% if (log.user) { %>
-                  <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(log.username) %>&background=3b4a6b&color=fff&size=20" class="avatar-xs me-1" alt="" />
-                  <% } %>
-                  <%= log.username || '—' %>
-                </td>
-                <td>
-                  <span class="badge bg-<%= log.status === 'success' ? 'success' : log.status === 'failure' ? 'danger' : 'warning' %>">
-                    <%= log.status %>
-                  </span>
-                </td>
-                <td>
-                  <span class="badge sev-<%= log.severity %>"><%= log.severity %></span>
-                </td>
-                <td class="text-muted small"><%= moment(log.createdAt).fromNow() %></td>
-              </tr>
-              <% }) %>
-              <% if (!recentLogs.length) { %>
-              <tr><td colspan="5" class="text-center text-muted py-3">No activity recorded yet.</td></tr>
+        <ul class="list-group list-group-flush list-dark" id="ghFeed">
+          <% recentGithubEvents.forEach(ev => { %>
+          <li class="list-group-item">
+            <div class="d-flex align-items-start gap-2">
+              <% if (ev.senderAvatar) { %>
+              <img src="<%= ev.senderAvatar %>" class="avatar-xs mt-1" alt="" />
+              <% } else { %>
+              <i class="fa-brands fa-github text-muted mt-1"></i>
               <% } %>
-            </tbody>
-          </table>
-        </div>
+              <div class="min-w-0">
+                <div class="small fw-semibold text-truncate" style="max-width:220px"><%= ev.title %></div>
+                <div class="text-muted" style="font-size:.7rem"><span class="badge bg-dark text-muted me-1"><%= ev.eventType %></span><%= moment(ev.createdAt).fromNow() %></div>
+              </div>
+            </div>
+          </li>
+          <% }) %>
+          <% if (!recentGithubEvents.length) { %>
+          <li class="list-group-item text-muted text-center small py-3">
+            No GitHub events yet.<br>
+            <a href="/settings" class="text-muted">Configure webhook →</a>
+          </li>
+          <% } %>
+        </ul>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Live Audit Feed -->
+<div class="card card-dark">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <h5 class="mb-0">
+      <i class="fa-solid fa-timeline me-2 text-warning"></i>Live Activity Feed
+      <span class="badge bg-success ms-2 small" id="liveLabel">● LIVE</span>
+    </h5>
+    <a href="/audit" class="btn btn-sm btn-outline-secondary">View All <i class="fa-solid fa-arrow-right ms-1"></i></a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-dark table-hover table-sm mb-0">
+        <thead><tr><th>Action</th><th>User</th><th>Status</th><th>Severity</th><th>Time</th></tr></thead>
+        <tbody id="auditFeed">
+          <% recentLogs.forEach(entry => { %>
+          <tr>
+            <td><code class="text-info small"><%= entry.action %></code></td>
+            <td>
+              <% if (entry.user && entry.user.githubAvatar) { %>
+              <img src="<%= entry.user.githubAvatar %>" class="avatar-xs me-1" alt="" />
+              <% } %>
+              <span class="small"><%= entry.username || '—' %></span>
+            </td>
+            <td><span class="badge bg-<%= entry.status === 'success' ? 'success' : entry.status === 'failure' ? 'danger' : 'warning' %>"><%= entry.status %></span></td>
+            <td><span class="badge sev-<%= entry.severity %>"><%= entry.severity %></span></td>
+            <td class="text-muted small"><%= moment(entry.createdAt).fromNow() %></td>
+          </tr>
+          <% }) %>
+          <% if (!recentLogs.length) { %>
+          <tr><td colspan="5" class="text-center text-muted py-3">No activity yet.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -133,31 +190,54 @@
 <% const extraScripts = `
 <script>
 (function() {
-  const labels = <%- activityLabels %>;
-  const data   = <%- activityData %>;
-  const ctx = document.getElementById('activityChart').getContext('2d');
-  new Chart(ctx, {
+  // Activity line chart
+  new Chart(document.getElementById('activityChart'), {
     type: 'line',
     data: {
-      labels,
-      datasets: [{
-        label: 'Events',
-        data,
-        borderColor: '#0d6efd',
-        backgroundColor: 'rgba(13,110,253,0.12)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 3,
-        pointHoverRadius: 6,
+      labels: <%- activityLabels %>,
+      datasets: [{ label: 'Events', data: <%- activityData %>,
+        borderColor: '#3b7ddd', backgroundColor: 'rgba(59,125,221,0.1)',
+        fill: true, tension: 0.4, pointRadius: 2, pointHoverRadius: 5 }]
+    },
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8b92a5',maxTicksLimit:8}},
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8b92a5',precision:0},beginAtZero:true}
+      }
+    }
+  });
+
+  // Severity doughnut
+  new Chart(document.getElementById('severityChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Low','Medium','High','Critical'],
+      datasets:[{data: <%- severityData %>,
+        backgroundColor:['#198754','#fd7e14','#dc3545','#6f1d1b'],
+        borderWidth:0
       }]
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#adb5bd', maxTicksLimit: 10 } },
-        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#adb5bd', precision: 0 }, beginAtZero: true },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{color:'#adb5bd',padding:12,font:{size:11}}}}
+    }
+  });
+
+  // Role distribution bar
+  new Chart(document.getElementById('roleChart'), {
+    type: 'bar',
+    data: {
+      labels: <%- roleLabels %>,
+      datasets:[{label:'Users', data: <%- roleData %>,
+        backgroundColor: <%- roleColors %>,
+        borderRadius: 4
+      }]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#adb5bd'}},
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#adb5bd',precision:0},beginAtZero:true}
       }
     }
   });

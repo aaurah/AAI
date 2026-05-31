@@ -2,9 +2,12 @@
 
 <div class="d-flex align-items-center justify-content-between mb-4">
   <h2 class="page-title mb-0"><i class="fa-solid fa-users me-2"></i>Users <span class="badge bg-secondary fs-6"><%= count %></span></h2>
-  <% if (currentUser.isSuperAdmin || (currentUser.role && currentUser.role.Permissions && currentUser.role.Permissions.some(p => p.name === 'users:create' || p.name === '*'))) { %>
-  <a href="/users/create" class="btn btn-primary"><i class="fa-solid fa-plus me-1"></i>Add User</a>
-  <% } %>
+  <div class="d-flex gap-2">
+    <a href="/users/export.csv" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-file-csv me-1"></i>Export CSV</a>
+    <% if (currentUser.isSuperAdmin || (currentUser.role && currentUser.role.Permissions && currentUser.role.Permissions.some(p => p.name === 'users:create' || p.name === '*'))) { %>
+    <a href="/users/create" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Add User</a>
+    <% } %>
+  </div>
 </div>
 
 <!-- Filters -->
@@ -12,9 +15,9 @@
   <div class="card-body py-3">
     <form method="GET" action="/users" class="row g-2 align-items-end">
       <div class="col-sm-4">
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search name / email…" value="<%= search %>" />
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search name / email / username…" value="<%= search %>" />
       </div>
-      <div class="col-sm-3">
+      <div class="col-sm-2">
         <select name="role" class="form-select form-select-sm">
           <option value="">All Roles</option>
           <% roles.forEach(r => { %>
@@ -29,9 +32,37 @@
           <option value="inactive" <%= statusFilter === 'inactive' ? 'selected' : '' %>>Inactive</option>
         </select>
       </div>
+      <div class="col-sm-2">
+        <select name="sort" class="form-select form-select-sm">
+          <option value="createdAt" <%= sort === 'createdAt' ? 'selected' : '' %>>Created</option>
+          <option value="username" <%= sort === 'username' ? 'selected' : '' %>>Username</option>
+          <option value="lastLogin" <%= sort === 'lastLogin' ? 'selected' : '' %>>Last Login</option>
+          <option value="loginCount" <%= sort === 'loginCount' ? 'selected' : '' %>>Login Count</option>
+        </select>
+      </div>
       <div class="col-auto">
         <button type="submit" class="btn btn-sm btn-primary"><i class="fa-solid fa-filter me-1"></i>Filter</button>
         <a href="/users" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Bulk action bar -->
+<div class="bulk-bar" id="bulkBar" style="display:none">
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-muted small"><span id="bulkCount">0</span> selected</span>
+    <form method="POST" action="/users/bulk" id="bulkForm" onsubmit="return confirmBulk()">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div id="bulkIds"></div>
+      <div class="d-flex gap-2">
+        <select name="action" class="form-select form-select-sm" id="bulkAction" style="width:auto">
+          <option value="activate">Activate</option>
+          <option value="deactivate">Deactivate</option>
+          <option value="delete" class="text-danger">Delete</option>
+        </select>
+        <button type="submit" class="btn btn-sm btn-warning">Apply to Selected</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSelection">Clear</button>
       </div>
     </form>
   </div>
@@ -43,22 +74,31 @@
       <table class="table table-dark table-hover align-middle mb-0">
         <thead>
           <tr>
-            <th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Created</th><th class="text-end">Actions</th>
+            <th style="width:36px"><input type="checkbox" class="form-check-input" id="selectAll" /></th>
+            <th>User</th><th>Email</th><th>Role</th><th>Status</th>
+            <th><a class="text-muted text-decoration-none" href="?sort=lastLogin&dir=<%= dir === 'asc' ? 'desc' : 'asc' %>&q=<%= search %>">Last Login <i class="fa-solid fa-sort"></i></a></th>
+            <th><a class="text-muted text-decoration-none" href="?sort=loginCount&dir=<%= dir === 'asc' ? 'desc' : 'asc' %>&q=<%= search %>">Logins <i class="fa-solid fa-sort"></i></a></th>
+            <th class="text-end">Actions</th>
           </tr>
         </thead>
         <tbody>
           <% users.forEach(u => { %>
-          <tr>
+          <tr data-id="<%= u.id %>">
+            <td><input type="checkbox" class="form-check-input row-check" value="<%= u.id %>" /></td>
             <td>
               <div class="d-flex align-items-center gap-2">
-                <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(u.fullName ? u.fullName() : u.username) %>&background=3b4a6b&color=fff&size=32" class="avatar-sm" alt="" />
+                <img src="<%= u.githubAvatar || u.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(u.fullName ? u.fullName() : u.username) + '&background=3b4a6b&color=fff&size=32' %>"
+                  class="avatar-sm" alt="" />
                 <div>
                   <div class="fw-semibold"><%= u.fullName ? u.fullName() : u.username %></div>
-                  <small class="text-muted">@<%= u.username %></small>
+                  <small class="text-muted d-flex align-items-center gap-1">
+                    @<%= u.username %>
+                    <% if (u.githubUsername) { %><i class="fa-brands fa-github text-muted" title="GitHub: @<%= u.githubUsername %>"></i><% } %>
+                  </small>
                 </div>
               </div>
             </td>
-            <td class="text-muted"><%= u.email %></td>
+            <td class="text-muted small"><%= u.email %></td>
             <td>
               <% if (u.role) { %>
               <span class="badge" style="background-color: <%= u.role.color %>"><%= u.role.name %></span>
@@ -73,7 +113,7 @@
               </span>
             </td>
             <td class="text-muted small"><%= u.lastLogin ? moment(u.lastLogin).fromNow() : 'Never' %></td>
-            <td class="text-muted small"><%= moment(u.createdAt).format('MMM D, YYYY') %></td>
+            <td class="text-muted small"><%= u.loginCount %></td>
             <td class="text-end">
               <div class="btn-group btn-group-sm">
                 <a href="/users/<%= u.id %>/edit" class="btn btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></a>
@@ -84,7 +124,8 @@
                   </button>
                 </form>
                 <% if (u.id !== currentUser.id) { %>
-                <button class="btn btn-outline-danger" title="Delete" onclick="confirmDelete('/users/<%= u.id %>/delete', '<%= u.username %>')">
+                <button class="btn btn-outline-danger" title="Delete"
+                  onclick="confirmDelete('/users/<%= u.id %>/delete', '<%= u.username %>')">
                   <i class="fa-solid fa-trash"></i>
                 </button>
                 <% } %>
@@ -93,7 +134,7 @@
           </tr>
           <% }) %>
           <% if (!users.length) { %>
-          <tr><td colspan="7" class="text-center text-muted py-4">No users found.</td></tr>
+          <tr><td colspan="8" class="text-center text-muted py-4">No users found.</td></tr>
           <% } %>
         </tbody>
       </table>
@@ -104,9 +145,9 @@
   <div class="card-footer d-flex justify-content-between align-items-center">
     <span class="text-muted small">Showing <%= (page-1)*20+1 %>–<%= Math.min(page*20, count) %> of <%= count %></span>
     <nav><ul class="pagination pagination-sm mb-0">
-      <% for (let i = 1; i <= pages; i++) { %>
+      <% for (let i = Math.max(1, page-3); i <= Math.min(pages, page+3); i++) { %>
       <li class="page-item <%= i === page ? 'active' : '' %>">
-        <a class="page-link" href="?page=<%= i %>&q=<%= search %>&role=<%= roleFilter %>&status=<%= statusFilter %>"><%= i %></a>
+        <a class="page-link" href="?page=<%= i %>&q=<%= search %>&role=<%= roleFilter %>&status=<%= statusFilter %>&sort=<%= sort %>&dir=<%= dir %>"><%= i %></a>
       </li>
       <% } %>
     </ul></nav>
@@ -114,14 +155,12 @@
   <% } %>
 </div>
 
-<!-- Delete confirmation modal -->
+<!-- Delete modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-header"><h5 class="modal-title text-danger"><i class="fa-solid fa-trash me-2"></i>Delete User</h5></div>
-      <div class="modal-body">
-        <p>Delete <strong id="deleteTarget"></strong>? This cannot be undone.</p>
-      </div>
+      <div class="modal-body"><p>Delete <strong id="deleteTarget"></strong>? This cannot be undone.</p></div>
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <form id="deleteForm" method="POST" class="d-inline">
@@ -134,10 +173,43 @@
 </div>
 
 <% const extraScripts = `<script>
+// Delete confirmation
 function confirmDelete(url, name) {
   document.getElementById('deleteTarget').textContent = name;
   document.getElementById('deleteForm').action = url;
   new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+// Select all / bulk
+const selectAll = document.getElementById('selectAll');
+const rowChecks = document.querySelectorAll('.row-check');
+const bulkBar  = document.getElementById('bulkBar');
+const bulkCount = document.getElementById('bulkCount');
+const bulkIds  = document.getElementById('bulkIds');
+
+function updateBulkBar() {
+  const selected = [...rowChecks].filter(c => c.checked);
+  bulkCount.textContent = selected.length;
+  bulkBar.style.display = selected.length > 0 ? 'block' : 'none';
+  bulkIds.innerHTML = selected.map(c => '<input type="hidden" name="ids[]" value="' + c.value + '">').join('');
+}
+
+selectAll.addEventListener('change', () => {
+  rowChecks.forEach(c => c.checked = selectAll.checked);
+  updateBulkBar();
+});
+rowChecks.forEach(c => c.addEventListener('change', updateBulkBar));
+document.getElementById('clearSelection').addEventListener('click', () => {
+  selectAll.checked = false;
+  rowChecks.forEach(c => c.checked = false);
+  updateBulkBar();
+});
+
+function confirmBulk() {
+  const action = document.getElementById('bulkAction').value;
+  const count = parseInt(bulkCount.textContent);
+  if (action === 'delete') return confirm('Delete ' + count + ' user(s)? This cannot be undone.');
+  return true;
 }
 <\/script>`; %>
 

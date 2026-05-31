@@ -8,7 +8,8 @@
   <div class="col-lg-4">
     <div class="card card-dark">
       <div class="card-body text-center py-4">
-        <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(currentUser.fullName()) %>&background=3b4a6b&color=fff&size=96" class="avatar-lg mb-3" alt="avatar" />
+        <img src="<%= currentUser.githubAvatar || currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.fullName()) + '&background=3b4a6b&color=fff&size=96' %>"
+          class="avatar-lg mb-3" alt="avatar" />
         <h5 class="mb-1"><%= currentUser.fullName() %></h5>
         <p class="text-muted mb-1">@<%= currentUser.username %></p>
         <% if (currentUser.role) { %>
@@ -20,8 +21,44 @@
         <hr />
         <div class="text-start small text-muted">
           <div><i class="fa-solid fa-clock me-2"></i>Last login: <%= currentUser.lastLogin ? moment(currentUser.lastLogin).fromNow() : 'Never' %></div>
-          <div class="mt-1"><i class="fa-solid fa-arrow-right-to-bracket me-2"></i>Logins: <%= currentUser.loginCount %></div>
+          <div class="mt-1"><i class="fa-solid fa-arrow-right-to-bracket me-2"></i>Total logins: <%= currentUser.loginCount %></div>
+          <% if (currentUser.lastLoginIp) { %>
+          <div class="mt-1"><i class="fa-solid fa-network-wired me-2"></i><%= currentUser.lastLoginIp %></div>
+          <% } %>
         </div>
+      </div>
+    </div>
+
+    <!-- GitHub Card -->
+    <div class="card card-dark mt-3">
+      <div class="card-header"><h6 class="mb-0"><i class="fa-brands fa-github me-2"></i>GitHub Integration</h6></div>
+      <div class="card-body">
+        <% if (currentUser.githubUsername) { %>
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <img src="<%= currentUser.githubAvatar %>" class="avatar-sm" alt="" />
+          <div>
+            <div class="fw-semibold">@<%= currentUser.githubUsername %></div>
+            <a href="https://github.com/<%= currentUser.githubUsername %>" target="_blank" class="small text-muted">View on GitHub</a>
+          </div>
+          <span class="badge bg-success ms-auto">Connected</span>
+        </div>
+        <form method="POST" action="/github/disconnect">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="btn btn-sm btn-outline-danger w-100">
+            <i class="fa-solid fa-unlink me-1"></i>Disconnect
+          </button>
+        </form>
+        <% } else if (githubOAuthEnabled) { %>
+        <p class="text-muted small mb-3">Link your GitHub account for OAuth login and profile avatar.</p>
+        <a href="/github/connect" class="btn btn-sm btn-outline-secondary w-100">
+          <i class="fa-brands fa-github me-1"></i>Connect GitHub
+        </a>
+        <% } else { %>
+        <p class="text-muted small mb-0">
+          GitHub OAuth is not configured.<br>
+          Set <code>GITHUB_CLIENT_ID</code> and <code>GITHUB_CLIENT_SECRET</code> in your .env file.
+        </p>
+        <% } %>
       </div>
     </div>
   </div>
@@ -51,6 +88,7 @@
       </div>
     </div>
 
+    <% if (currentUser.password) { %>
     <div class="card card-dark">
       <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-lock me-2"></i>Change Password</h5></div>
       <div class="card-body">
@@ -72,6 +110,27 @@
         </form>
       </div>
     </div>
+    <% } else { %>
+    <div class="card card-dark">
+      <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-lock me-2"></i>Set Password</h5></div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">You're using GitHub login only. Set a password to enable direct login.</p>
+        <form method="POST" action="/auth/profile/password">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <input type="hidden" name="currentPassword" value="__github_skip__" />
+          <div class="mb-3">
+            <label class="form-label">New Password</label>
+            <input type="password" name="newPassword" class="form-control" minlength="8" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Confirm Password</label>
+            <input type="password" name="confirmPassword" class="form-control" required />
+          </div>
+          <button type="submit" class="btn btn-warning"><i class="fa-solid fa-key me-1"></i>Set Password</button>
+        </form>
+      </div>
+    </div>
+    <% } %>
   </div>
 </div>
 

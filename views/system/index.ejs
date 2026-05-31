@@ -1,0 +1,139 @@
+<%- include('../partials/header', { title }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="page-title mb-0"><i class="fa-solid fa-server me-2"></i>System Health</h2>
+  <button class="btn btn-sm btn-outline-secondary" id="refreshStats"><i class="fa-solid fa-rotate-right me-1"></i>Refresh</button>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-green">
+      <div class="kpi-icon"><i class="fa-solid fa-circle-check"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Status</div>
+        <div class="kpi-value" style="font-size:1.2rem">Healthy</div>
+        <div class="kpi-sub">Node <%= stats.node.version %></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Uptime</div>
+        <div class="kpi-value" style="font-size:1.2rem" id="uptimeVal"><%= stats.node.uptime %></div>
+        <div class="kpi-sub">PID <%= stats.node.pid %></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-orange">
+      <div class="kpi-icon"><i class="fa-solid fa-microchip"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Heap Used</div>
+        <div class="kpi-value" style="font-size:1.2rem"><%= stats.memory.heapUsed %> MB</div>
+        <div class="kpi-sub">of <%= stats.memory.heapTotal %> MB total</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card kpi-purple">
+      <div class="kpi-icon"><i class="fa-solid fa-database"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Database</div>
+        <div class="kpi-value" style="font-size:1.2rem"><%= stats.database.dialect %></div>
+        <div class="kpi-sub"><%= stats.database.userCount %> users, <%= stats.database.auditCount %> events</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Memory -->
+  <div class="col-lg-6">
+    <div class="card card-dark h-100">
+      <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-memory me-2 text-info"></i>Memory Usage</h5></div>
+      <div class="card-body">
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="small">Heap Used (<%= stats.memory.heapUsed %> MB)</span>
+            <span class="small text-muted"><%= stats.memory.heapPct %>%</span>
+          </div>
+          <div class="progress" style="height:8px">
+            <div class="progress-bar bg-<%= stats.memory.heapPct > 80 ? 'danger' : stats.memory.heapPct > 60 ? 'warning' : 'primary' %>"
+              style="width:<%= stats.memory.heapPct %>%"></div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="small">OS Free Memory (<%= stats.memory.osFreeGB %> GB)</span>
+            <span class="small text-muted">of <%= stats.memory.osTotalGB %> GB</span>
+          </div>
+          <div class="progress" style="height:8px">
+            <div class="progress-bar bg-success" style="width:<%= Math.round((stats.memory.osFreeGB/stats.memory.osTotalGB)*100) %>%"></div>
+          </div>
+        </div>
+        <table class="table table-dark table-sm mb-0">
+          <tr><td class="text-muted">RSS</td><td><%= stats.memory.rss %> MB</td></tr>
+          <tr><td class="text-muted">Heap Total</td><td><%= stats.memory.heapTotal %> MB</td></tr>
+          <tr><td class="text-muted">External</td><td><%= stats.memory.external %> MB</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Info -->
+  <div class="col-lg-6">
+    <div class="card card-dark h-100">
+      <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-info-circle me-2 text-success"></i>System Info</h5></div>
+      <div class="card-body">
+        <table class="table table-dark table-sm mb-0">
+          <tr><td class="text-muted">Hostname</td><td><%= stats.os.hostname %></td></tr>
+          <tr><td class="text-muted">OS</td><td><%= stats.os.type %> <%= stats.os.release %></td></tr>
+          <tr><td class="text-muted">Architecture</td><td><%= stats.node.arch %></td></tr>
+          <tr><td class="text-muted">CPUs</td><td><%= stats.os.cpus %> cores</td></tr>
+          <tr><td class="text-muted">Load Average</td><td><%= stats.os.loadAvg.join(' / ') %></td></tr>
+          <tr><td class="text-muted">Node.js</td><td><%= stats.node.version %></td></tr>
+          <tr><td class="text-muted">Environment</td><td><span class="badge bg-<%= stats.env === 'production' ? 'success' : 'warning text-dark' %>"><%= stats.env %></span></td></tr>
+          <tr><td class="text-muted">Platform</td><td><%= stats.node.platform %></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database stats -->
+  <div class="col-12">
+    <div class="card card-dark">
+      <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-database me-2 text-warning"></i>Database Records</h5></div>
+      <div class="card-body">
+        <div class="row g-3">
+          <% const dbItems = [
+            { label: 'Users', value: stats.database.userCount, icon: 'fa-users', color: 'primary' },
+            { label: 'Active Users', value: stats.database.activeUsers, icon: 'fa-user-check', color: 'success' },
+            { label: 'Audit Events', value: stats.database.auditCount, icon: 'fa-scroll', color: 'warning' },
+            { label: 'API Keys', value: stats.database.apiKeyCount, icon: 'fa-key', color: 'orange' },
+            { label: 'GitHub Events', value: stats.database.ghEventCount, icon: 'fa-brands fa-github', color: 'secondary' },
+            { label: 'Unread Notifications', value: stats.database.notifCount, icon: 'fa-bell', color: 'info' },
+          ]; %>
+          <% dbItems.forEach(item => { %>
+          <div class="col-sm-4 col-lg-2">
+            <div class="text-center p-3 rounded" style="background:rgba(0,0,0,0.2)">
+              <i class="fa-solid <%= item.icon %> text-<%= item.color %> mb-2" style="font-size:1.5rem"></i>
+              <div class="fw-bold fs-4"><%= item.value.toLocaleString() %></div>
+              <div class="text-muted small"><%= item.label %></div>
+            </div>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% const extraScripts = `<script>
+document.getElementById('refreshStats').addEventListener('click', () => location.reload());
+// Auto-refresh every 30s
+setTimeout(() => location.reload(), 30000);
+<\/script>`; %>
+
+<%- include('../partials/footer') %>

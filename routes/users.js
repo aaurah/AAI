@@ -11,6 +11,8 @@ const userValidation = [
 ];
 
 router.get('/', authenticate, authorize('users:read'), ctrl.index);
+router.get('/export.csv', authenticate, authorize('users:read'), ctrl.exportCSV);
+router.post('/bulk', authenticate, authorize('users:update'), ctrl.bulkAction);
 router.get('/create', authenticate, authorize('users:create'), ctrl.create);
 router.post('/create', authenticate, authorize('users:create'), userValidation, ctrl.store);
 router.get('/:id/edit', authenticate, authorize('users:update'), ctrl.edit);

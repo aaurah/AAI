@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" id="htmlRoot">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,43 +19,65 @@
   <ul class="nav flex-column sidebar-nav">
     <li class="nav-item">
       <a class="nav-link <%= title === 'Dashboard' ? 'active' : '' %>" href="/dashboard">
-        <i class="fa-solid fa-gauge-high"></i> Dashboard
+        <i class="fa-solid fa-gauge-high"></i><span>Dashboard</span>
       </a>
     </li>
-    <% const _hasPermission = (perm) => currentUser && (currentUser.isSuperAdmin || (currentUser.role && currentUser.role.Permissions && currentUser.role.Permissions.some(p => p.name === perm || p.name === '*'))); %>
+
+    <% const _has = (p) => currentUser && (currentUser.isSuperAdmin || (currentUser.role && currentUser.role.Permissions && currentUser.role.Permissions.some(x => x.name === p || x.name === '*'))); %>
+
     <li class="nav-section">USER MANAGEMENT</li>
-    <% if (_hasPermission('users:read')) { %>
+    <% if (_has('users:read')) { %>
     <li class="nav-item">
       <a class="nav-link <%= title && title.includes('User') ? 'active' : '' %>" href="/users">
-        <i class="fa-solid fa-users"></i> Users
+        <i class="fa-solid fa-users"></i><span>Users</span>
       </a>
     </li>
     <% } %>
-    <% if (_hasPermission('roles:read')) { %>
+    <% if (_has('roles:read')) { %>
     <li class="nav-item">
       <a class="nav-link <%= title && title.includes('Role') ? 'active' : '' %>" href="/roles">
-        <i class="fa-solid fa-user-shield"></i> Roles & Permissions
+        <i class="fa-solid fa-user-shield"></i><span>Roles & Permissions</span>
       </a>
     </li>
     <% } %>
+
+    <li class="nav-section">INTEGRATIONS</li>
+    <li class="nav-item">
+      <a class="nav-link <%= title === 'GitHub Events' ? 'active' : '' %>" href="/github/events">
+        <i class="fa-brands fa-github"></i><span>GitHub Events</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="/api/v1/stats" target="_blank">
+        <i class="fa-solid fa-plug"></i><span>REST API</span>
+        <span class="badge bg-primary ms-auto" style="font-size:.6rem">v1</span>
+      </a>
+    </li>
+
     <li class="nav-section">SECURITY</li>
     <li class="nav-item">
       <a class="nav-link <%= title === 'API Keys' ? 'active' : '' %>" href="/apikeys">
-        <i class="fa-solid fa-key"></i> API Keys
+        <i class="fa-solid fa-key"></i><span>API Keys</span>
       </a>
     </li>
-    <% if (_hasPermission('audit:read')) { %>
+    <% if (_has('audit:read')) { %>
     <li class="nav-item">
       <a class="nav-link <%= title === 'Audit Log' ? 'active' : '' %>" href="/audit">
-        <i class="fa-solid fa-scroll"></i> Audit Log
+        <i class="fa-solid fa-scroll"></i><span>Audit Log</span>
       </a>
     </li>
     <% } %>
-    <% if (_hasPermission('settings:read')) { %>
-    <li class="nav-section">CONFIGURATION</li>
+
+    <% if (_has('settings:read')) { %>
+    <li class="nav-section">ADMINISTRATION</li>
+    <li class="nav-item">
+      <a class="nav-link <%= title === 'System Health' ? 'active' : '' %>" href="/system">
+        <i class="fa-solid fa-server"></i><span>System Health</span>
+      </a>
+    </li>
     <li class="nav-item">
       <a class="nav-link <%= title === 'Settings' ? 'active' : '' %>" href="/settings">
-        <i class="fa-solid fa-gear"></i> Settings
+        <i class="fa-solid fa-gear"></i><span>Settings</span>
       </a>
     </li>
     <% } %>
@@ -63,10 +85,14 @@
 
   <div class="sidebar-footer">
     <div class="user-info">
-      <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(currentUser ? currentUser.fullName() : 'U') %>&background=3b4a6b&color=fff&size=32" class="avatar-sm" alt="avatar" />
+      <img src="<%= currentUser ? (currentUser.githubAvatar || currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.fullName()) + '&background=3b4a6b&color=fff&size=32') : '' %>"
+        class="avatar-sm" alt="avatar" />
       <div class="user-meta">
         <span class="user-name"><%= currentUser ? currentUser.fullName() : '' %></span>
-        <span class="user-role"><%= currentUser && currentUser.role ? currentUser.role.name : (currentUser && currentUser.isSuperAdmin ? 'Super Admin' : '') %></span>
+        <span class="user-role">
+          <%= currentUser && currentUser.role ? currentUser.role.name : (currentUser && currentUser.isSuperAdmin ? 'Super Admin' : '') %>
+          <% if (currentUser && currentUser.githubUsername) { %><i class="fa-brands fa-github ms-1 text-muted"></i><% } %>
+        </span>
       </div>
     </div>
     <a href="/auth/profile" class="btn btn-sm btn-outline-secondary me-1" title="Profile"><i class="fa-solid fa-user-pen"></i></a>
@@ -76,17 +102,54 @@
 
 <div id="main-content" class="main-content">
   <header class="topbar">
-    <button class="btn btn-sm btn-ghost sidebar-toggle" id="sidebarToggle">
+    <button class="btn btn-sm btn-ghost sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
       <i class="fa-solid fa-bars"></i>
     </button>
+
     <nav aria-label="breadcrumb" class="breadcrumb-nav">
       <ol class="breadcrumb mb-0">
         <li class="breadcrumb-item"><a href="/dashboard">Home</a></li>
         <li class="breadcrumb-item active"><%= title %></li>
       </ol>
     </nav>
+
     <div class="topbar-right">
-      <span class="badge bg-secondary"><%= appName %></span>
+      <!-- Live indicator -->
+      <span class="live-indicator" id="liveIndicator" title="Live updates connected">
+        <span class="live-dot"></span>
+      </span>
+
+      <!-- Notifications -->
+      <div class="dropdown">
+        <button class="btn btn-ghost btn-icon position-relative" data-bs-toggle="dropdown" aria-label="Notifications">
+          <i class="fa-solid fa-bell"></i>
+          <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end notif-dropdown p-0" style="width:340px;max-height:420px;overflow-y:auto">
+          <div class="notif-header d-flex align-items-center justify-content-between px-3 py-2">
+            <span class="fw-semibold">Notifications</span>
+            <button class="btn btn-link btn-sm p-0 text-muted" id="markAllRead">Mark all read</button>
+          </div>
+          <div id="notifList"><div class="text-center text-muted py-4 small">Loading…</div></div>
+          <div class="text-center py-2 border-top"><a href="/notifications" class="small text-muted">View all</a></div>
+        </div>
+      </div>
+
+      <!-- Theme toggle -->
+      <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+        <i class="fa-solid fa-moon" id="themeIcon"></i>
+      </button>
+
+      <!-- GitHub link -->
+      <% if (githubOAuthEnabled && currentUser && !currentUser.githubUsername) { %>
+      <a href="/github/connect" class="btn btn-sm btn-outline-secondary" title="Connect GitHub">
+        <i class="fa-brands fa-github"></i>
+      </a>
+      <% } else if (currentUser && currentUser.githubUsername) { %>
+      <a href="https://github.com/<%= currentUser.githubUsername %>" target="_blank" class="btn btn-sm btn-ghost" title="@<%= currentUser.githubUsername %>">
+        <i class="fa-brands fa-github"></i>
+      </a>
+      <% } %>
     </div>
   </header>
 
