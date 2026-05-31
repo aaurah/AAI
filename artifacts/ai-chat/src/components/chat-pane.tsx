@@ -67,6 +67,15 @@ const GITHUB_MODELS = [
   { id: "github:Mistral-small", name: "Mistral Small (GitHub)" },
 ];
 
+const COPILOT_MODELS = [
+  { id: "copilot:gpt-4o", name: "GPT-4o" },
+  { id: "copilot:gpt-4o-mini", name: "GPT-4o mini" },
+  { id: "copilot:claude-3.5-sonnet", name: "Claude 3.5 Sonnet" },
+  { id: "copilot:claude-3.7-sonnet", name: "Claude 3.7 Sonnet" },
+  { id: "copilot:o3-mini", name: "o3-mini" },
+  { id: "copilot:o1-mini", name: "o1-mini" },
+];
+
 type Attachment = { type: "image" | "video"; data: string; file?: File };
 
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -409,11 +418,13 @@ When the user asks about this project, answer based on the repository context ab
       const systemPrompt = activeRepo ? await buildRepoSystemPrompt(activeRepo) : undefined;
 
       const authToken = localStorage.getItem("auth_token");
+      const githubToken = localStorage.getItem("github_token");
       const res = await fetch(`/api/openrouter/conversations/${targetId}/messages?model=${model}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(model.startsWith("copilot:") && githubToken ? { "X-GitHub-Token": githubToken } : {}),
         },
         body: JSON.stringify({ content: payloadStr, ...(systemPrompt ? { systemPrompt } : {}) }),
         signal: abortControllerRef.current.signal,
@@ -584,6 +595,7 @@ When the user asks about this project, answer based on the repository context ab
   const getProviderForModel = (modelId: string): string => {
     if (modelId.startsWith("claude:")) return "anthropic";
     if (modelId.startsWith("github:")) return "github";
+    if (modelId.startsWith("copilot:")) return "copilot";
     if (modelId.startsWith("ollama:")) return "ollama";
     return "openrouter";
   };
@@ -591,6 +603,11 @@ When the user asks about this project, answer based on the repository context ab
   const getProviderWarning = (modelId: string): string | null => {
     const provider = getProviderForModel(modelId);
     if (Object.keys(providerStatus).length === 0) return null;
+    if (provider === "copilot") {
+      const hasGhToken = !!localStorage.getItem("github_token");
+      if (!hasGhToken) return "GitHub Copilot requires your GitHub account to be connected — go to Settings and connect GitHub";
+      return null;
+    }
     if (providerStatus[provider] === false) {
       if (provider === "anthropic") return "Claude requires ANTHROPIC_API_KEY — set it in Replit Secrets";
       if (provider === "github") return "GitHub Models requires GITHUB_TOKEN — set it in Replit Secrets";
@@ -628,6 +645,13 @@ When the user asks about this project, answer based on the repository context ab
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
                 {GITHUB_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Copilot</SelectLabel>
+                {COPILOT_MODELS.map((m) => (
                   <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                 ))}
               </SelectGroup>
