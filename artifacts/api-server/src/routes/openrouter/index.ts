@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { db, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { openrouter } from "@workspace/integrations-openrouter-ai";
 import {
   CreateOpenrouterConversationBody,
   SendOpenrouterMessageBody,
@@ -29,12 +28,12 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
   return { userId: user.id };
 }
 
-// All models use the :free tier so no OpenRouter credits are needed.
+// All models target the :free tier so no OpenRouter credits are needed.
 const MODELS: Record<string, string> = {
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct:free",
   "llama-4-scout": "meta-llama/llama-4-scout:free",
   "mistral": "mistralai/mistral-7b-instruct:free",
-  "gemma": "google/gemma-3-27b-it:free",
+  "gemma": "google/gemma-2-9b-it:free",
   "qwen": "qwen/qwq-32b:free",
 };
 
@@ -48,7 +47,7 @@ You are a powerful AI assistant optimized for software development, code review,
 ## App capabilities you can leverage
 - **GitHub integration**: Users can connect any GitHub repository. When a repo is connected, you receive the README and full file tree as context — use this to give accurate, project-specific answers.
 - **Code commits**: When you write code that should be saved to a file, start the code block's first line with \`// File: path/to/file\` (or \`# File: path/to/file\` for Python/shell). A "Commit to GitHub" button will automatically appear, letting the user push your code directly to their repo.
-- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral 7B, Gemma 3 27B, and QwQ-32B.
+- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral 7B, Gemma 2 9B, and QwQ-32B.
 - **Vision**: Image and video attachments are supported (Llama 4 Scout handles images best).
 - **Voice**: Users can speak messages via voice input and hear responses via text-to-speech.
 - **Message actions**: Every message has copy, like/dislike, share, and text-to-speech buttons.
@@ -213,6 +212,17 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const modelName = MODELS[modelKey] ?? DEFAULT_MODEL;
   const systemPrompt = (req.body as any).systemPrompt as string | undefined;
 
+  // Read OpenRouter config from env — checked at request time so we can return
+  // a clear error rather than crashing at startup.
+  const orBaseUrl = (process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL ?? "").replace(/\/$/, "");
+  const orApiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ?? "";
+
+  if (!orBaseUrl || !orApiKey) {
+    return res.status(500).json({
+      error: "OpenRouter is not configured. Set AI_INTEGRATIONS_OPENROUTER_BASE_URL and AI_INTEGRATIONS_OPENROUTER_API_KEY in Replit Secrets.",
+    });
+  }
+
   try {
     const [conv] = await db
       .select()
@@ -257,12 +267,6 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       return { role: m.role as "user" | "assistant" | "system", content: m.content };
     });
 
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-
-    let fullResponse = "";
-
     const fullSystemPrompt = systemPrompt
       ? `${BASE_SYSTEM_PROMPT}\n\n---\n\n## Connected Repository Context\n\n${systemPrompt}`
       : BASE_SYSTEM_PROMPT;
@@ -272,19 +276,78 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       ...chatMessages,
     ];
 
-    const stream = await openrouter.chat.completions.create({
-      model: modelName,
-      max_tokens: 4096,
-      messages: messagesWithSystem,
-      stream: true,
+    // ── Direct fetch to OpenRouter (bypasses SDK to expose raw HTTP status) ──
+    const orResponse = await fetch(`${orBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${orApiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://aai.app",
+        "X-Title": "AAI Chat",
+      },
+      body: JSON.stringify({
+        model: modelName,
+        max_tokens: 4096,
+        messages: messagesWithSystem,
+        stream: true,
+      }),
     });
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        fullResponse += content;
-        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+    if (!orResponse.ok) {
+      const rawBody = await orResponse.text().catch(() => "");
+      let errMsg = `OpenRouter ${orResponse.status}`;
+      try {
+        const j = JSON.parse(rawBody) as any;
+        const detail = j?.error?.message ?? j?.error ?? j?.message;
+        if (detail) errMsg += `: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`;
+        else if (rawBody) errMsg += `: ${rawBody.slice(0, 300)}`;
+      } catch {
+        if (rawBody) errMsg += `: ${rawBody.slice(0, 300)}`;
       }
+      console.error(`[openrouter] model=${modelName} HTTP ${orResponse.status}: ${rawBody}`);
+      return res.status(502).json({ error: errMsg });
+    }
+
+    if (!orResponse.body) {
+      return res.status(502).json({ error: "OpenRouter returned an empty response body" });
+    }
+
+    // ── Stream response to client ──
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const reader = (orResponse.body as any).getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let fullResponse = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
+        if (done) break;
+        if (!value) continue;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const d = line.slice(6).trim();
+          if (!d || d === "[DONE]") continue;
+          try {
+            const chunk = JSON.parse(d) as { choices?: { delta?: { content?: string } }[] };
+            const c = chunk.choices?.[0]?.delta?.content;
+            if (c) {
+              fullResponse += c;
+              res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+            }
+          } catch {
+            // skip malformed SSE line
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
     }
 
     await db.insert(messagesTable).values({
