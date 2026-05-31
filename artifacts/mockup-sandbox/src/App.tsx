@@ -19,6 +19,8 @@ function _resolveComponent(
   );
 }
 
+const SAFE_COMPONENT_PATH = /^[a-zA-Z0-9_\-/]+$/;
+
 function PreviewRenderer({
   componentPath,
   modules,
@@ -36,6 +38,10 @@ function PreviewRenderer({
     setError(null);
 
     async function loadComponent(): Promise<void> {
+      if (!SAFE_COMPONENT_PATH.test(componentPath) || componentPath.includes("..")) {
+        setError(`Invalid component path: ${componentPath}`);
+        return;
+      }
       const key = `./components/mockups/${componentPath}.tsx`;
       const loader = modules[key];
       if (!loader) {
