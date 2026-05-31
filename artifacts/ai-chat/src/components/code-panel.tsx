@@ -141,7 +141,7 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId: cid, deviceCode }),
         });
-        const data = await res.json() as { access_token?: string; error?: string };
+        const data = await res.json() as { access_token?: string; error?: string; interval?: number };
         if (data.access_token) {
           clearInterval(pollRef.current!);
           pollRef.current = null;
@@ -149,6 +149,16 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           setToken(data.access_token);
           setOauthStep("idle");
           setDeviceData(null);
+        } else if (data.error === "slow_down") {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          startPolling(cid, deviceCode, (data.interval ?? interval) + 5);
+        } else if (data.error === "expired_token") {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setOauthStep("idle");
+          setDeviceData(null);
+          setRepoError("Device code expired. Please start the authorization again.");
         }
       } catch {}
     }, interval * 1000);
@@ -208,9 +218,11 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
     setLoadingFileSha(file.sha);
     setFileError(null);
     try {
-      const data = await ghFetch(`https://api.github.com/repos/${selectedRepo!.full_name}/contents/${file.path}`, token) as { encoding: string; content: string };
+      const encodedPath = file.path.split("/").map(encodeURIComponent).join("/");
+      const data = await ghFetch(`https://api.github.com/repos/${selectedRepo!.full_name}/contents/${encodedPath}`, token) as { encoding: string; content: string };
       if (data.encoding !== "base64") throw new Error("Unsupported encoding");
-      const content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
+      const bytes = Uint8Array.from(atob(data.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
+      const content = new TextDecoder().decode(bytes);
       onLoadFile(file.path, content);
     } catch (err: unknown) {
       setFileError(err instanceof Error ? err.message : "Failed to load file");

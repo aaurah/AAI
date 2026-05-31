@@ -108,9 +108,11 @@ function CopyCodeBtn({ code }: { code: string }) {
 
 function encodeBase64(str: string): string {
   const bytes = new TextEncoder().encode(str);
-  let binary = "";
-  bytes.forEach((b) => (binary += String.fromCharCode(b)));
-  return btoa(binary);
+  return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
+}
+
+function ghEncodePath(filePath: string): string {
+  return filePath.split("/").map(encodeURIComponent).join("/");
 }
 
 function MessageContent({
@@ -204,6 +206,7 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
 
   const [commitTarget, setCommitTarget] = useState<{ path: string; code: string } | null>(null);
   const [commitMsg, setCommitMsg] = useState("");
+  const [commitBranch, setCommitBranch] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
 
   const repoPromptCache = useRef<Record<string, string>>({});
@@ -491,24 +494,41 @@ When the user asks about this project, answer based on the repository context ab
     const token = localStorage.getItem("github_token");
     if (!token) { toast({ title: "No GitHub token found", variant: "destructive" }); return; }
     setIsCommitting(true);
+    const encodedPath = ghEncodePath(commitTarget.path);
+    const branch = commitBranch.trim();
     try {
       let sha: string | undefined;
-      try {
-        const existing = await fetch(`https://api.github.com/repos/${activeRepo.fullName}/contents/${commitTarget.path}`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json" },
-        });
-        if (existing.ok) sha = (await existing.json()).sha;
-      } catch {}
-      const body: Record<string, string> = { message: commitMsg || `Update ${commitTarget.path}`, content: encodeBase64(commitTarget.code) };
+      const shaUrl = `https://api.github.com/repos/${activeRepo.fullName}/contents/${encodedPath}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`;
+      const shaRes = await fetch(shaUrl, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json" },
+      });
+      if (shaRes.ok) sha = (await shaRes.json()).sha;
+      else if (shaRes.status !== 404) {
+        const e = await shaRes.json().catch(() => ({})) as Record<string, string>;
+        throw new Error(e.message || `Could not fetch file info (${shaRes.status})`);
+      }
+      const body: Record<string, string> = {
+        message: commitMsg.trim() || `Update ${commitTarget.path}`,
+        content: encodeBase64(commitTarget.code),
+      };
       if (sha) body.sha = sha;
-      const res = await fetch(`https://api.github.com/repos/${activeRepo.fullName}/contents/${commitTarget.path}`, {
+      if (branch) body.branch = branch;
+      const res = await fetch(`https://api.github.com/repos/${activeRepo.fullName}/contents/${encodedPath}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        toast({ title: `Committed ${commitTarget.path}`, description: `To ${activeRepo.fullName}`, duration: 3000 });
+        const data = await res.json() as { commit?: { html_url?: string } };
+        const commitUrl = data.commit?.html_url;
+        if (commitUrl) window.open(commitUrl, "_blank", "noopener,noreferrer");
+        toast({
+          title: `Committed ${commitTarget.path}`,
+          description: `To ${activeRepo.fullName}${branch ? `@${branch}` : ""}`,
+          duration: 3000,
+        });
         setCommitTarget(null);
+        setCommitBranch("");
       } else {
         const err = await res.json().catch(() => ({})) as Record<string, string>;
         throw new Error(err.message || `GitHub error ${res.status}`);
@@ -828,8 +848,15 @@ When the user asks about this project, answer based on the repository context ab
               className="text-sm"
               autoFocus
             />
+            <Input
+              value={commitBranch}
+              onChange={(e) => setCommitBranch(e.target.value)}
+              placeholder="Branch (leave blank for default)"
+              className="text-sm font-mono"
+              data-testid="commit-branch-input"
+            />
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setCommitTarget(null)}>Cancel</Button>
+              <Button variant="outline" className="flex-1" onClick={() => { setCommitTarget(null); setCommitBranch(""); }}>Cancel</Button>
               <Button className="flex-1" onClick={doCommit} disabled={isCommitting} data-testid="do-commit-btn">
                 {isCommitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Github className="h-4 w-4 mr-2" />}
                 Commit
