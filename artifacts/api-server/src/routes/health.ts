@@ -10,7 +10,7 @@ router.get("/healthz", (_req, res) => {
 
 router.get("/health/providers", (_req, res) => {
   res.json({
-    openrouter: !!(process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPEN_ROUTER),
+    openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER || process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY),
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     github: !!process.env.GITHUB_TOKEN,
     copilot: !!process.env.GITHUB_TOKEN, // Copilot uses GITHUB_TOKEN (needs Copilot subscription)

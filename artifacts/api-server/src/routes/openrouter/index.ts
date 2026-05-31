@@ -612,12 +612,13 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     }
 
     // ── OpenRouter branch ──
-    const orBaseUrl = (process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "");
-    const orApiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPEN_ROUTER || "";
+    // Always use openrouter.ai directly — env var may point to a different service
+    const orBaseUrl = "https://openrouter.ai/api/v1";
+    const orApiKey = process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER || process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || "";
 
     if (!orApiKey) {
       return res.status(500).json({
-        error: "OpenRouter is not configured. Set OPEN_ROUTER or AI_INTEGRATIONS_OPENROUTER_API_KEY in Replit Secrets.",
+        error: "OpenRouter is not configured. Set OPENROUTER_API_KEY in Replit Secrets (get a free key at openrouter.ai).",
       });
     }
 
