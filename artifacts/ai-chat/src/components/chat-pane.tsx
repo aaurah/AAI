@@ -49,7 +49,7 @@ const MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
   { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
   { id: "mistral", name: "Mistral 7B" },
-  { id: "gemma", name: "Gemma 3 27B" },
+  { id: "gemma", name: "Gemma 2 9B" },
   { id: "qwen", name: "QwQ-32B" },
 ];
 
