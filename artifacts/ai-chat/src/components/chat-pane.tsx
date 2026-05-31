@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -581,27 +581,35 @@ When the user asks about this project, answer based on the repository context ab
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Cloud (OpenRouter)</SelectLabel>
-              {OPENROUTER_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Cloud (OpenRouter)</SelectLabel>
+                {OPENROUTER_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
               <SelectSeparator />
-              <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Anthropic (Claude)</SelectLabel>
-              {ANTHROPIC_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Anthropic (Claude)</SelectLabel>
+                {ANTHROPIC_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
               <SelectSeparator />
-              <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
-              {GITHUB_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
+                {GITHUB_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
               {ollamaModels.length > 0 && (
                 <>
                   <SelectSeparator />
-                  <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Local (Ollama)</SelectLabel>
-                  {ollamaModels.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Local (Ollama)</SelectLabel>
+                    {ollamaModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 </>
               )}
             </SelectContent>
