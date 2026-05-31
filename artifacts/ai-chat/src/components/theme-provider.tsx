@@ -1,52 +1,62 @@
-import { useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "dark" | "light" | "system"
+export type AppTheme = "light" | "dark" | "amoled" | "night-yellow" | "system";
 
-type ThemeProviderProps = {
-  children: React.ReactNode
-  defaultTheme?: Theme
-  storageKey?: string
+const ALL_THEME_CLASSES: AppTheme[] = ["light", "dark", "amoled", "night-yellow"];
+const STORAGE_KEY = "app-theme";
+
+interface ThemeContextValue {
+  theme: AppTheme;
+  setTheme: (theme: AppTheme) => void;
+}
+
+const ThemeContext = createContext<ThemeContextValue>({
+  theme: "dark",
+  setTheme: () => {},
+});
+
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+
+interface ThemeProviderProps {
+  children: React.ReactNode;
+  defaultTheme?: AppTheme;
+  storageKey?: string;
+}
+
+function resolveTheme(theme: AppTheme): Exclude<AppTheme, "system"> {
+  if (theme === "system") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return theme;
 }
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
-  storageKey = "vite-ui-theme",
+  defaultTheme = "dark",
+  storageKey = STORAGE_KEY,
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-  )
+  const [theme, setThemeState] = useState<AppTheme>(
+    () => (localStorage.getItem(storageKey) as AppTheme) || defaultTheme
+  );
 
   useEffect(() => {
-    const root = window.document.documentElement
+    const root = window.document.documentElement;
+    ALL_THEME_CLASSES.forEach((cls) => root.classList.remove(cls));
+    const resolved = resolveTheme(theme);
+    root.classList.add(resolved);
+  }, [theme]);
 
-    root.classList.remove("light", "dark")
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light"
-
-      root.classList.add(systemTheme)
-      return
-    }
-
-    root.classList.add(theme)
-  }, [theme])
-
-  const value = {
-    theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
-    },
-  }
+  const setTheme = (newTheme: AppTheme) => {
+    localStorage.setItem(storageKey, newTheme);
+    setThemeState(newTheme);
+  };
 
   return (
-    <div {...props} data-theme-provider="">
-      {children}
-    </div>
-  )
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      <div {...props}>{children}</div>
+    </ThemeContext.Provider>
+  );
 }

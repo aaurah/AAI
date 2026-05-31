@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useTheme, type AppTheme } from "@/components/theme-provider";
 import {
   ArrowLeft, User, Key, CreditCard, Check, Copy, Trash2, Plus,
-  Eye, EyeOff, Loader2, Star, Zap, Building2, LogOut, Shield,
+  Eye, EyeOff, Loader2, Star, Zap, Building2, LogOut, Shield, Palette,
 } from "lucide-react";
 
 interface UserData { id: number; name: string; email: string; plan: string; }
@@ -20,62 +21,133 @@ const PLAN_INFO = {
 
 const PLANS = [
   {
-    id: "starter",
-    name: "Starter",
-    price: "Free",
-    period: "",
-    icon: Star,
-    color: "border-border",
-    highlight: false,
-    features: [
-      "100 messages per day",
-      "3 AI models",
-      "GitHub integration",
-      "Conversation history",
-      "Voice input & TTS",
-    ],
-    cta: "Current Plan",
-    ctaVariant: "outline" as const,
+    id: "starter", name: "Starter", price: "Free", period: "", icon: Star,
+    color: "border-border", highlight: false,
+    features: ["100 messages per day", "3 AI models", "GitHub integration", "Conversation history", "Voice input & TTS"],
+    cta: "Current Plan", ctaVariant: "outline" as const,
   },
   {
-    id: "pro",
-    name: "Pro",
-    price: "$12",
-    period: "/month",
-    icon: Zap,
-    color: "border-primary",
-    highlight: true,
-    features: [
-      "Unlimited messages",
-      "All 5 AI models",
-      "GitHub integration",
-      "Priority responses",
-      "API key access (3 keys)",
-      "Message export",
-    ],
-    cta: "Upgrade to Pro",
-    ctaVariant: "default" as const,
+    id: "pro", name: "Pro", price: "$12", period: "/month", icon: Zap,
+    color: "border-primary", highlight: true,
+    features: ["Unlimited messages", "All 5 AI models", "GitHub integration", "Priority responses", "API key access (3 keys)", "Message export"],
+    cta: "Upgrade to Pro", ctaVariant: "default" as const,
   },
   {
-    id: "business",
-    name: "Business",
-    price: "Custom",
-    period: "",
-    icon: Building2,
-    color: "border-amber-500/50",
-    highlight: false,
-    features: [
-      "Everything in Pro",
-      "Unlimited API keys",
-      "Team accounts",
-      "Custom model limits",
-      "Priority support",
-      "SLA guarantee",
-    ],
-    cta: "Contact Sales",
-    ctaVariant: "outline" as const,
+    id: "business", name: "Business", price: "Custom", period: "", icon: Building2,
+    color: "border-amber-500/50", highlight: false,
+    features: ["Everything in Pro", "Unlimited API keys", "Team accounts", "Custom model limits", "Priority support", "SLA guarantee"],
+    cta: "Contact Sales", ctaVariant: "outline" as const,
   },
 ];
+
+const THEMES: { id: AppTheme; label: string; description: string; bg: string; fg: string; accent: string; sidebar: string }[] = [
+  {
+    id: "dark",
+    label: "Dark",
+    description: "Ocean-teal dark mode",
+    bg: "#0c1a20",
+    fg: "#d9ecf2",
+    accent: "#2dd4bf",
+    sidebar: "#091519",
+  },
+  {
+    id: "light",
+    label: "Light",
+    description: "Clean light mode",
+    bg: "#f5fafb",
+    fg: "#0d2633",
+    accent: "#0f9b87",
+    sidebar: "#eaf5f7",
+  },
+  {
+    id: "amoled",
+    label: "AMOLED Black",
+    description: "Pure black for OLED screens",
+    bg: "#000000",
+    fg: "#f7f7f7",
+    accent: "#03a9f4",
+    sidebar: "#090909",
+  },
+  {
+    id: "night-yellow",
+    label: "Night Yellow",
+    description: "Warm amber on deep navy",
+    bg: "#2c3e50",
+    fg: "#f7dc6f",
+    accent: "#f2c464",
+    sidebar: "#243342",
+  },
+];
+
+function ThemePreview({ theme, active, onClick }: { theme: typeof THEMES[0]; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative rounded-2xl overflow-hidden border-2 transition-all text-left w-full ${active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-muted-foreground/40"}`}
+    >
+      {/* Mini app preview */}
+      <div className="flex h-24" style={{ background: theme.bg }}>
+        {/* Sidebar strip */}
+        <div className="w-8 flex-shrink-0 flex flex-col gap-1 p-1.5" style={{ background: theme.sidebar, borderRight: `1px solid ${theme.fg}14` }}>
+          <div className="h-1.5 w-4 rounded-full" style={{ background: theme.accent, opacity: 0.9 }} />
+          <div className="h-1 w-5 rounded-full mt-1" style={{ background: theme.fg, opacity: 0.3 }} />
+          <div className="h-1 w-4 rounded-full" style={{ background: theme.fg, opacity: 0.2 }} />
+          <div className="h-1 w-5 rounded-full" style={{ background: theme.fg, opacity: 0.2 }} />
+        </div>
+        {/* Main area */}
+        <div className="flex-1 flex flex-col justify-end p-2 gap-1">
+          <div className="flex justify-end">
+            <div className="h-2 rounded-full px-2 text-[5px]" style={{ background: theme.accent, opacity: 0.85, width: "45%" }} />
+          </div>
+          <div className="flex justify-start">
+            <div className="h-2 rounded-full" style={{ background: theme.fg, opacity: 0.15, width: "60%" }} />
+          </div>
+          {/* Input bar */}
+          <div className="flex gap-1 mt-1">
+            <div className="flex-1 h-3 rounded-full" style={{ background: theme.fg, opacity: 0.1 }} />
+            <div className="h-3 w-3 rounded-full" style={{ background: theme.accent }} />
+          </div>
+        </div>
+      </div>
+      {/* Label */}
+      <div className="px-3 py-2.5 bg-card">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold">{theme.label}</div>
+            <div className="text-[10px] text-muted-foreground">{theme.description}</div>
+          </div>
+          {active && (
+            <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center shrink-0">
+              <Check className="h-3 w-3 text-primary-foreground" />
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function AppearanceSection() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-semibold mb-1">Color theme</h3>
+        <p className="text-xs text-muted-foreground mb-4">Choose how the app looks. Your preference is saved locally.</p>
+        <div className="grid grid-cols-2 gap-3">
+          {THEMES.map((t) => (
+            <ThemePreview
+              key={t.id}
+              theme={t}
+              active={theme === t.id || (theme === "system" && t.id === "dark")}
+              onClick={() => setTheme(t.id)}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AuthSection({ onLogin }: { onLogin: (user: UserData, token: string) => void }) {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
@@ -116,22 +188,10 @@ function AuthSection({ onLogin }: { onLogin: (user: UserData, token: string) => 
         <h2 className="text-xl font-semibold">Your account</h2>
         <p className="text-sm text-muted-foreground mt-1">Sign in to manage your plans and API keys</p>
       </div>
-
       <div className="flex rounded-lg bg-muted p-1 mb-6">
-        <button
-          onClick={() => { setTab("signin"); setError(""); }}
-          className={`flex-1 py-1.5 text-sm rounded-md font-medium transition-colors ${tab === "signin" ? "bg-background shadow text-foreground" : "text-muted-foreground"}`}
-        >
-          Sign In
-        </button>
-        <button
-          onClick={() => { setTab("signup"); setError(""); }}
-          className={`flex-1 py-1.5 text-sm rounded-md font-medium transition-colors ${tab === "signup" ? "bg-background shadow text-foreground" : "text-muted-foreground"}`}
-        >
-          Sign Up
-        </button>
+        <button onClick={() => { setTab("signin"); setError(""); }} className={`flex-1 py-1.5 text-sm rounded-md font-medium transition-colors ${tab === "signin" ? "bg-background shadow text-foreground" : "text-muted-foreground"}`}>Sign In</button>
+        <button onClick={() => { setTab("signup"); setError(""); }} className={`flex-1 py-1.5 text-sm rounded-md font-medium transition-colors ${tab === "signup" ? "bg-background shadow text-foreground" : "text-muted-foreground"}`}>Sign Up</button>
       </div>
-
       <form onSubmit={handleSubmit} className="space-y-4">
         {tab === "signup" && (
           <div className="space-y-1.5">
@@ -246,12 +306,7 @@ function PlansSection({ user, onPlanChange }: { user: UserData | null; onPlanCha
                   </li>
                 ))}
               </ul>
-              <Button
-                variant={isCurrent ? "outline" : plan.ctaVariant}
-                className={`w-full ${plan.id === "business" ? "border-amber-500/40 text-amber-500 hover:bg-amber-500/10" : ""}`}
-                disabled={isCurrent || loading === plan.id}
-                onClick={() => handleSelect(plan.id)}
-              >
+              <Button variant={isCurrent ? "outline" : plan.ctaVariant} className={`w-full ${plan.id === "business" ? "border-amber-500/40 text-amber-500 hover:bg-amber-500/10" : ""}`} disabled={isCurrent || loading === plan.id} onClick={() => handleSelect(plan.id)}>
                 {loading === plan.id && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {isCurrent ? "Current Plan" : plan.cta}
               </Button>
@@ -350,7 +405,6 @@ function ApiKeysSection({ user }: { user: UserData | null }) {
           </Button>
         </form>
       </div>
-
       {newlyCreated && (
         <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-2">
           <div className="flex items-center gap-2 text-sm font-medium text-primary">
@@ -366,7 +420,6 @@ function ApiKeysSection({ user }: { user: UserData | null }) {
           <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-6" onClick={() => setNewlyCreated(null)}>Dismiss</Button>
         </div>
       )}
-
       {loading ? (
         <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : keys.length === 0 ? (
@@ -384,31 +437,24 @@ function ApiKeysSection({ user }: { user: UserData | null }) {
                 <div>Created {new Date(k.createdAt).toLocaleDateString()}</div>
                 {k.lastUsedAt && <div>Used {new Date(k.lastUsedAt).toLocaleDateString()}</div>}
               </div>
-              <button
-                onClick={() => handleRevoke(k.id)}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                title="Revoke key"
-              >
+              <button onClick={() => handleRevoke(k.id)} className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title="Revoke key">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
           ))}
         </div>
       )}
-
       <div className="rounded-lg border bg-muted/30 p-4 space-y-1.5">
         <div className="text-sm font-medium">How to use your API key</div>
         <div className="text-xs text-muted-foreground">Send requests to your API with the Authorization header:</div>
-        <code className="text-xs bg-background border rounded px-2 py-1 block font-mono">
-          Authorization: Bearer sk-ai-...
-        </code>
+        <code className="text-xs bg-background border rounded px-2 py-1 block font-mono">Authorization: Bearer sk-ai-...</code>
         <div className="text-xs text-muted-foreground pt-1">Base URL: <span className="font-mono text-foreground">{window.location.origin}/api</span></div>
       </div>
     </div>
   );
 }
 
-type Tab = "account" | "plans" | "apikeys";
+type Tab = "account" | "plans" | "apikeys" | "appearance";
 
 export default function SettingsPage() {
   const [, setLocation] = useLocation();
@@ -426,14 +472,11 @@ export default function SettingsPage() {
   }, []);
 
   const handleLogin = (userData: UserData) => setUser(userData);
-
-  const handleLogout = () => {
-    localStorage.removeItem("auth_token");
-    setUser(null);
-  };
+  const handleLogout = () => { localStorage.removeItem("auth_token"); setUser(null); };
 
   const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "account", label: "Account", icon: User },
+    { id: "appearance", label: "Theme", icon: Palette },
     { id: "plans", label: "Plans", icon: CreditCard },
     { id: "apikeys", label: "API Keys", icon: Key },
   ];
@@ -456,16 +499,16 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b bg-background shrink-0">
+      <div className="flex border-b bg-background shrink-0 overflow-x-auto">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              className={`flex-1 min-w-[72px] flex items-center justify-center gap-1.5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-4 w-4 shrink-0" />
               <span>{tab.label}</span>
             </button>
           );
@@ -479,14 +522,9 @@ export default function SettingsPage() {
             <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : (
             <>
-              {activeTab === "account" && (
-                user
-                  ? <AccountSection user={user} onLogout={handleLogout} />
-                  : <AuthSection onLogin={handleLogin} />
-              )}
-              {activeTab === "plans" && (
-                <PlansSection user={user} onPlanChange={(plan) => setUser((u) => u ? { ...u, plan } : u)} />
-              )}
+              {activeTab === "account" && (user ? <AccountSection user={user} onLogout={handleLogout} /> : <AuthSection onLogin={handleLogin} />)}
+              {activeTab === "appearance" && <AppearanceSection />}
+              {activeTab === "plans" && <PlansSection user={user} onPlanChange={(plan) => setUser((u) => u ? { ...u, plan } : u)} />}
               {activeTab === "apikeys" && <ApiKeysSection user={user} />}
             </>
           )}
