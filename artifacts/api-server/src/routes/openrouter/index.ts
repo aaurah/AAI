@@ -47,11 +47,24 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
 
 // All models target the :free tier so no OpenRouter credits are needed.
 const MODELS: Record<string, string> = {
+  // Meta Llama
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct:free",
   "llama-4-scout": "meta-llama/llama-4-scout:free",
+  "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
+  // Mistral
   "mistral": "mistralai/mistral-7b-instruct:free",
+  "mistral-nemo": "mistralai/mistral-nemo:free",
+  // Google
   "gemma": "google/gemma-2-9b-it:free",
+  "gemma-3-27b": "google/gemma-3-27b-it:free",
+  // DeepSeek
+  "deepseek-r1": "deepseek/deepseek-r1:free",
+  "deepseek-v3": "deepseek/deepseek-chat-v3-5:free",
+  // Qwen
   "qwen": "qwen/qwq-32b:free",
+  "qwen-2.5": "qwen/qwen-2.5-72b-instruct:free",
+  // Microsoft
+  "phi-4": "microsoft/phi-4-reasoning:free",
 };
 
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";

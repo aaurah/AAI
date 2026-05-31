@@ -48,9 +48,16 @@ interface GHRepo {
 const OPENROUTER_MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
   { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
-  { id: "mistral", name: "Mistral 7B" },
+  { id: "llama-3.1-8b", name: "Llama 3.1 8B (Fast)" },
+  { id: "deepseek-r1", name: "DeepSeek R1 (Reasoning)" },
+  { id: "deepseek-v3", name: "DeepSeek V3" },
+  { id: "qwen", name: "QwQ-32B (Reasoning)" },
+  { id: "qwen-2.5", name: "Qwen 2.5 72B" },
   { id: "gemma", name: "Gemma 2 9B" },
-  { id: "qwen", name: "QwQ-32B" },
+  { id: "gemma-3-27b", name: "Gemma 3 27B" },
+  { id: "mistral", name: "Mistral 7B" },
+  { id: "mistral-nemo", name: "Mistral Nemo 12B" },
+  { id: "phi-4", name: "Phi-4 Reasoning" },
 ];
 
 const ANTHROPIC_MODELS = [
