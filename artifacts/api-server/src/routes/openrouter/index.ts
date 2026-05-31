@@ -18,12 +18,12 @@ const router = Router();
 async function requireAuth(req: any, res: any): Promise<{ userId: number } | null> {
   const payload = await verifyToken(req.headers.authorization);
   if (!payload) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized — please sign in" });
     return null;
   }
   const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, payload.userId)).limit(1);
   if (!user) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized — user not found" });
     return null;
   }
   return { userId: user.id };
@@ -32,9 +32,9 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
 const MODELS: Record<string, string> = {
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct",
   "llama-4-scout": "meta-llama/llama-4-scout",
-  "mistral": "mistralai/mistral-small-2603",
-  "gemma": "google/gemma-3n-e4b-it",
-  "qwen": "qwen/qwen3.6-flash",
+  "mistral": "mistralai/mistral-small-3.1-24b-instruct",
+  "gemma": "google/gemma-3-27b-it",
+  "qwen": "qwen/qwq-32b",
 };
 
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct";
@@ -47,7 +47,7 @@ You are a powerful AI assistant optimized for software development, code review,
 ## App capabilities you can leverage
 - **GitHub integration**: Users can connect any GitHub repository. When a repo is connected, you receive the README and full file tree as context — use this to give accurate, project-specific answers.
 - **Code commits**: When you write code that should be saved to a file, start the code block's first line with \`// File: path/to/file\` (or \`# File: path/to/file\` for Python/shell). A "Commit to GitHub" button will automatically appear, letting the user push your code directly to their repo.
-- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral Small, Gemma 3, and Qwen 3.6 Flash.
+- **Multiple AI models**: The user can switch between Llama 3.3 70B, Llama 4 Scout (Vision), Mistral Small 3.1, Gemma 3 27B, and QwQ-32B.
 - **Vision**: Image and video attachments are supported (Llama 4 Scout handles images best).
 - **Voice**: Users can speak messages via voice input and hear responses via text-to-speech.
 - **Message actions**: Every message has copy, like/dislike, share, and text-to-speech buttons.
@@ -295,10 +295,12 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[openrouter] model=${modelName} error:`, err);
     if (!res.headersSent) {
-      return res.status(500).json({ error: "Failed to send message" });
+      return res.status(500).json({ error: errMsg });
     }
-    res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: errMsg })}\n\n`);
     res.end();
   }
 });

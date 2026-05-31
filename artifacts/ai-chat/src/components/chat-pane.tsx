@@ -48,9 +48,9 @@ interface GHRepo {
 const MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
   { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
-  { id: "mistral", name: "Mistral Small" },
-  { id: "gemma", name: "Gemma 3" },
-  { id: "qwen", name: "Qwen 3.6 Flash" },
+  { id: "mistral", name: "Mistral Small 3.1" },
+  { id: "gemma", name: "Gemma 3 27B" },
+  { id: "qwen", name: "QwQ-32B" },
 ];
 
 type Attachment = { type: "image" | "video"; data: string; file?: File };
@@ -385,8 +385,14 @@ When the user asks about this project, answer based on the repository context ab
         body: JSON.stringify({ content: payloadStr, ...(systemPrompt ? { systemPrompt } : {}) }),
         signal: abortControllerRef.current.signal,
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error || `Request failed (${res.status})`);
+      }
+
       queryClient.invalidateQueries({ queryKey: getListOpenrouterMessagesQueryKey(targetId) });
-      if (!res.body) throw new Error("No body");
+      if (!res.body) throw new Error("No response body");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantText = "";
@@ -401,12 +407,23 @@ When the user asks about this project, answer based on the repository context ab
           try {
             const data = JSON.parse(dataStr);
             if (data.done) break;
+            if (data.error) throw new Error(data.error);
             if (data.content) { assistantText += data.content; setStreamingContent(assistantText); }
-          } catch {}
+          } catch (parseErr) {
+            if (parseErr instanceof SyntaxError) continue;
+            throw parseErr;
+          }
         }
       }
     } catch (err: any) {
-      if (err.name !== "AbortError") console.error("Stream error:", err);
+      if (err.name !== "AbortError") {
+        console.error("Stream error:", err);
+        toast({
+          title: "AI Error",
+          description: err.message || "Failed to get a response. Check your API key and model availability.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsStreaming(false);
       setStreamingContent("");
