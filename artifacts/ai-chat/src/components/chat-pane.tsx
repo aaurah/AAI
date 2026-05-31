@@ -684,7 +684,7 @@ When the user asks about this project, answer based on the repository context ab
             <SelectTrigger className="border-0 bg-transparent shadow-none focus:ring-0 text-base font-semibold gap-1 w-auto px-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[60vh] overflow-y-auto">
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Cloud (OpenRouter)</SelectLabel>
                 {OPENROUTER_MODELS.map((m) => (
