@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -45,12 +45,26 @@ interface GHRepo {
   updated_at: string;
 }
 
-const MODELS = [
+const OPENROUTER_MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
   { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
   { id: "mistral", name: "Mistral 7B" },
   { id: "gemma", name: "Gemma 2 9B" },
   { id: "qwen", name: "QwQ-32B" },
+];
+
+const ANTHROPIC_MODELS = [
+  { id: "claude:claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+  { id: "claude:claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
+  { id: "claude:claude-opus-4-8", name: "Claude Opus 4.8" },
+];
+
+const GITHUB_MODELS = [
+  { id: "github:gpt-4o", name: "GPT-4o" },
+  { id: "github:gpt-4o-mini", name: "GPT-4o mini" },
+  { id: "github:meta-llama-3.3-70b-instruct", name: "Llama 3.3 70B (GitHub)" },
+  { id: "github:Phi-4", name: "Phi-4" },
+  { id: "github:Mistral-small", name: "Mistral Small (GitHub)" },
 ];
 
 type Attachment = { type: "image" | "video"; data: string; file?: File };
@@ -179,6 +193,7 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: Attachment[] } | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string }[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -193,6 +208,15 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   });
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const synth = window.speechSynthesis;
+
+  useEffect(() => {
+    fetch("/api/ollama/models")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data) && data.length > 0) setOllamaModels(data);
+      })
+      .catch(() => {});
+  }, []);
 
   const [activeRepo, setActiveRepo] = useState<RepoContext | null>(() => {
     try { return JSON.parse(localStorage.getItem("active_repo") || "null"); } catch { return null; }
@@ -557,9 +581,29 @@ When the user asks about this project, answer based on the repository context ab
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MODELS.map((m) => (
+              <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Cloud (OpenRouter)</SelectLabel>
+              {OPENROUTER_MODELS.map((m) => (
                 <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
               ))}
+              <SelectSeparator />
+              <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Anthropic (Claude)</SelectLabel>
+              {ANTHROPIC_MODELS.map((m) => (
+                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+              ))}
+              <SelectSeparator />
+              <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
+              {GITHUB_MODELS.map((m) => (
+                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+              ))}
+              {ollamaModels.length > 0 && (
+                <>
+                  <SelectSeparator />
+                  <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Local (Ollama)</SelectLabel>
+                  {ollamaModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  ))}
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>
