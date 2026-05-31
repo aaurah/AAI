@@ -233,6 +233,8 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
   const [repoPickerOpen, setRepoPickerOpen] = useState(false);
   const [repoSearch, setRepoSearch] = useState("");
+  const [publicRepoInput, setPublicRepoInput] = useState("");
+  const [publicRepoError, setPublicRepoError] = useState<string | null>(null);
 
   const [commitTarget, setCommitTarget] = useState<{ path: string; code: string } | null>(null);
   const [commitMsg, setCommitMsg] = useState("");
@@ -335,40 +337,80 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const connectPublicRepo = async (input: string) => {
+    setPublicRepoError(null);
+    // Accept formats: owner/repo, https://github.com/owner/repo, github.com/owner/repo
+    let fullName = input.trim().replace(/^https?:\/\/github\.com\//, "").replace(/^github\.com\//, "").replace(/\/$/, "");
+    const parts = fullName.split("/");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      setPublicRepoError("Enter a valid repo (e.g. facebook/react)");
+      return;
+    }
+    const [owner, repo] = parts;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+      if (!res.ok) { setPublicRepoError("Repo not found or not public"); return; }
+      const ctx: RepoContext = { fullName: `${owner}/${repo}`, owner, repo };
+      setActiveRepo(ctx);
+      localStorage.setItem("active_repo", JSON.stringify(ctx));
+      setRepoPickerOpen(false);
+      setPublicRepoInput("");
+    } catch { setPublicRepoError("Failed to reach GitHub"); }
+  };
+
   const buildRepoSystemPrompt = useCallback(async (repo: RepoContext): Promise<string> => {
     if (repoPromptCache.current[repo.fullName]) return repoPromptCache.current[repo.fullName];
     const token = localStorage.getItem("github_token");
+    const headers: Record<string, string> = { Accept: "application/vnd.github.v3+json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
     let readme = "";
     let fileTree = "";
+    let keyFileContents = "";
+
     try {
-      const headers: Record<string, string> = { Accept: "application/vnd.github.v3.raw" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
       const [readmeRes, treeRes] = await Promise.all([
-        fetch(`https://api.github.com/repos/${repo.fullName}/readme`, { headers }),
-        fetch(`https://api.github.com/repos/${repo.fullName}/git/trees/HEAD?recursive=1`, {
-          headers: { ...headers, Accept: "application/vnd.github.v3+json" },
-        }),
+        fetch(`https://api.github.com/repos/${repo.fullName}/readme`, { headers: { ...headers, Accept: "application/vnd.github.v3.raw" } }),
+        fetch(`https://api.github.com/repos/${repo.fullName}/git/trees/HEAD?recursive=1`, { headers }),
       ]);
       if (readmeRes.ok) {
         readme = await readmeRes.text();
-        if (readme.length > 6000) readme = readme.slice(0, 6000) + "\n...(truncated)";
+        if (readme.length > 5000) readme = readme.slice(0, 5000) + "\n...(truncated)";
       }
+
+      let allPaths: string[] = [];
       if (treeRes.ok) {
-        const treeData = await treeRes.json() as { tree: { path: string; type: string }[] };
-        const paths = treeData.tree
-          .filter((f) => f.type === "blob" && !f.path.includes("node_modules") && !f.path.startsWith("."))
-          .map((f) => f.path)
-          .slice(0, 200);
-        fileTree = paths.join("\n");
+        const treeData = await treeRes.json() as { tree: { path: string; type: string; size?: number }[] };
+        allPaths = treeData.tree
+          .filter((f) => f.type === "blob" && !f.path.includes("node_modules") && !f.path.startsWith(".") && !f.path.includes("dist/") && !f.path.includes("build/"))
+          .map((f) => f.path);
+        fileTree = allPaths.slice(0, 300).join("\n");
       }
+
+      // Fetch contents of key config/entry files (up to 5, max 3000 chars each)
+      const KEY_PATTERNS = [/^(package\.json|pyproject\.toml|Cargo\.toml|go\.mod|requirements\.txt)$/, /^(src\/index\.|src\/main\.|main\.|app\.|index\.)/];
+      const keyFiles = allPaths.filter((p) => KEY_PATTERNS.some((pat) => pat.test(p))).slice(0, 5);
+      const fileResults = await Promise.allSettled(
+        keyFiles.map((path) =>
+          fetch(`/api/github/repos/${repo.owner}/${repo.repo}/contents?path=${encodeURIComponent(path)}`)
+            .then((r) => r.ok ? r.json() : null)
+        )
+      );
+      const sections: string[] = [];
+      fileResults.forEach((result, i) => {
+        if (result.status === "fulfilled" && result.value?.text) {
+          const content = result.value.text.slice(0, 3000);
+          sections.push(`### ${keyFiles[i]}\n\`\`\`\n${content}${result.value.text.length > 3000 ? "\n...(truncated)" : ""}\n\`\`\``);
+        }
+      });
+      if (sections.length > 0) keyFileContents = sections.join("\n\n");
     } catch {}
 
     const prompt = `You are an AI coding assistant with full context of the GitHub repository: ${repo.fullName}.
 Owner: ${repo.owner} | Repo: ${repo.repo}
 
-${readme ? `## README\n\`\`\`\n${readme}\n\`\`\`\n` : ""}${fileTree ? `## File Tree\n\`\`\`\n${fileTree}\n\`\`\`` : ""}
+${readme ? `## README\n\`\`\`\n${readme}\n\`\`\`\n` : ""}${fileTree ? `## File Tree (${fileTree.split("\n").length} files)\n\`\`\`\n${fileTree}\n\`\`\`\n` : ""}${keyFileContents ? `\n## Key Files\n${keyFileContents}` : ""}
 
-When the user asks about this project, answer based on the repository context above. You can read files, suggest code changes, and help commit code back to the repo. When writing code to be committed, start the code block with \`// File: path/to/file\` so the user can commit it directly.`;
+When the user asks about this project, answer based on the repository context above. If asked to read a specific file, tell the user its path from the file tree. When writing code to be committed, start the code block with \`// File: path/to/file\` so the user can commit it directly.`;
 
     repoPromptCache.current[repo.fullName] = prompt;
     return prompt;
@@ -922,17 +964,37 @@ When the user asks about this project, answer based on the repository context ab
               )}
             </ScrollArea>
 
-            <div className="p-4 border-t shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search"
-                  value={repoSearch}
-                  onChange={(e) => setRepoSearch(e.target.value)}
-                  className="pl-9 bg-muted/40 border-0 focus-visible:ring-1"
-                  data-testid="repo-picker-search"
-                  autoFocus
-                />
+            <div className="p-4 border-t shrink-0 space-y-3">
+              {hasToken && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search your repos"
+                    value={repoSearch}
+                    onChange={(e) => setRepoSearch(e.target.value)}
+                    className="pl-9 bg-muted/40 border-0 focus-visible:ring-1"
+                    data-testid="repo-picker-search"
+                    autoFocus={hasToken}
+                  />
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground font-medium px-0.5">Connect any public repo</p>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="owner/repo or github.com/owner/repo"
+                    value={publicRepoInput}
+                    onChange={(e) => { setPublicRepoInput(e.target.value); setPublicRepoError(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") connectPublicRepo(publicRepoInput); }}
+                    className="bg-muted/40 border-0 focus-visible:ring-1 text-sm"
+                    autoFocus={!hasToken}
+                    data-testid="public-repo-input"
+                  />
+                  <Button size="sm" onClick={() => connectPublicRepo(publicRepoInput)} disabled={!publicRepoInput.trim()}>
+                    Connect
+                  </Button>
+                </div>
+                {publicRepoError && <p className="text-xs text-destructive px-0.5">{publicRepoError}</p>}
               </div>
             </div>
           </div>
