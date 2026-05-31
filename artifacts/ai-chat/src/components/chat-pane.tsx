@@ -201,6 +201,9 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
+
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
   const [likes, setLikes] = useState<Record<string, "like" | "dislike">>(() => {
@@ -215,6 +218,11 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
       .then((data: { id: string; name: string }[]) => {
         if (Array.isArray(data) && data.length > 0) setOllamaModels(data);
       })
+      .catch(() => {});
+
+    fetch("/api/health/providers")
+      .then((r) => r.ok ? r.json() : {})
+      .then((data: Record<string, boolean>) => setProviderStatus(data))
       .catch(() => {});
   }, []);
 
@@ -370,6 +378,7 @@ When the user asks about this project, answer based on the repository context ab
     const textToSend = overrideContent ? overrideContent.text : input;
     const attachmentsToSend = overrideContent ? overrideContent.attachments : attachments;
     if (!textToSend.trim() && attachmentsToSend.length === 0) return;
+    setSendError(null);
 
     if (isStreaming) {
       setQueuedMessage({ text: textToSend, attachments: attachmentsToSend });
@@ -442,6 +451,7 @@ When the user asks about this project, answer based on the repository context ab
     } catch (err: any) {
       if (err.name !== "AbortError") {
         console.error("Stream error:", err);
+        setSendError(err.message || "Failed to get a response. Check your API key and model availability.");
         toast({
           title: "AI Error",
           description: err.message || "Failed to get a response. Check your API key and model availability.",
@@ -570,6 +580,26 @@ When the user asks about this project, answer based on the repository context ab
 
   const filteredRepos = repos.filter((r) => r.full_name.toLowerCase().includes(repoSearch.toLowerCase()));
   const showSuggestions = !conversationId && messages.length === 0 && !isStreaming;
+
+  const getProviderForModel = (modelId: string): string => {
+    if (modelId.startsWith("claude:")) return "anthropic";
+    if (modelId.startsWith("github:")) return "github";
+    if (modelId.startsWith("ollama:")) return "ollama";
+    return "openrouter";
+  };
+
+  const getProviderWarning = (modelId: string): string | null => {
+    const provider = getProviderForModel(modelId);
+    if (Object.keys(providerStatus).length === 0) return null;
+    if (providerStatus[provider] === false) {
+      if (provider === "anthropic") return "Claude requires ANTHROPIC_API_KEY — set it in Replit Secrets";
+      if (provider === "github") return "GitHub Models requires GITHUB_TOKEN — set it in Replit Secrets";
+      if (provider === "openrouter") return "OpenRouter requires AI_INTEGRATIONS_OPENROUTER_API_KEY — set it in Replit Secrets";
+    }
+    return null;
+  };
+
+  const providerWarning = getProviderWarning(model);
 
   return (
     <div className="flex h-full flex-col bg-background relative">
@@ -793,6 +823,22 @@ When the user asks about this project, answer based on the repository context ab
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Inline send error */}
+          {sendError && (
+            <div className="mx-auto max-w-3xl mb-2 px-4 py-2 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm flex items-center justify-between">
+              <span>{sendError}</span>
+              <button onClick={() => setSendError(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+            </div>
+          )}
+
+          {/* Provider warning */}
+          {providerWarning && (
+            <div className="mx-auto max-w-3xl mb-2 px-4 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
+              <Cloud className="h-4 w-4 shrink-0" />
+              <span>{providerWarning}</span>
             </div>
           )}
 
