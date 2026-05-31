@@ -209,19 +209,9 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const conversationId = paramsParsed.data.id;
   const userContent = bodyParsed.data.content;
   const modelKey = (req.query.model as string) || "llama-3.3";
-  const modelName = MODELS[modelKey] ?? DEFAULT_MODEL;
+  const isOllama = modelKey.startsWith("ollama:");
+  const modelName = isOllama ? modelKey.slice("ollama:".length) : (MODELS[modelKey] ?? DEFAULT_MODEL);
   const systemPrompt = (req.body as any).systemPrompt as string | undefined;
-
-  // Read OpenRouter config from env — checked at request time so we can return
-  // a clear error rather than crashing at startup.
-  const orBaseUrl = (process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL ?? "").replace(/\/$/, "");
-  const orApiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ?? "";
-
-  if (!orBaseUrl || !orApiKey) {
-    return res.status(500).json({
-      error: "OpenRouter is not configured. Set AI_INTEGRATIONS_OPENROUTER_BASE_URL and AI_INTEGRATIONS_OPENROUTER_API_KEY in Replit Secrets.",
-    });
-  }
 
   try {
     const [conv] = await db
@@ -275,6 +265,83 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       { role: "system" as const, content: fullSystemPrompt },
       ...chatMessages,
     ];
+
+    // ── Ollama (local) branch ──
+    if (isOllama) {
+      const ollamaUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
+      const ollamaResponse = await fetch(`${ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelName,
+          messages: messagesWithSystem.map((m: { role: string; content: string | unknown[] }) => ({
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          })),
+          stream: true,
+        }),
+      });
+
+      if (!ollamaResponse.ok) {
+        const raw = await ollamaResponse.text().catch(() => "");
+        console.error(`[ollama] model=${modelName} HTTP ${ollamaResponse.status}: ${raw}`);
+        return res.status(502).json({ error: `Ollama ${ollamaResponse.status}: ${raw.slice(0, 300)}` });
+      }
+
+      if (!ollamaResponse.body) {
+        return res.status(502).json({ error: "Ollama returned an empty response body" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const reader = (ollamaResponse.body as any).getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+      let buf = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
+          if (done) break;
+          if (!value) continue;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const chunk = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
+              const c = chunk.message?.content;
+              if (c) {
+                fullResponse += c;
+                res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+              }
+            } catch {
+              // skip malformed line
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // ── OpenRouter branch ──
+    const orBaseUrl = (process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL ?? "").replace(/\/$/, "");
+    const orApiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ?? "";
+
+    if (!orBaseUrl || !orApiKey) {
+      return res.status(500).json({
+        error: "OpenRouter is not configured. Set AI_INTEGRATIONS_OPENROUTER_BASE_URL and AI_INTEGRATIONS_OPENROUTER_API_KEY in Replit Secrets.",
+      });
+    }
 
     // ── Direct fetch to OpenRouter (bypasses SDK to expose raw HTTP status) ──
     const orResponse = await fetch(`${orBaseUrl}/chat/completions`, {

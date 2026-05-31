@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import openrouterRouter from "./openrouter";
+import ollamaRouter from "./ollama";
 import githubRouter from "./github";
 import authRouter from "./auth";
 import apiKeysRouter from "./apikeys";
@@ -10,6 +11,7 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(openrouterRouter);
+router.use(ollamaRouter);
 router.use(githubRouter);
 router.use(authRouter);
 router.use(apiKeysRouter);
