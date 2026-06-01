@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useListOpenrouterConversations, useDeleteOpenrouterConversation, getListOpenrouterConversationsQueryKey } from "@workspace/api-client-react";
 import { Plus, MessageSquare, Trash2, Code2, Settings, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -135,6 +135,12 @@ function ConversationItem({
 
 export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<"chats" | "code" | "terminal">("chats");
+
+  useEffect(() => {
+    const handler = () => setActiveTab("terminal");
+    window.addEventListener("switch-to-terminal", handler);
+    return () => window.removeEventListener("switch-to-terminal", handler);
+  }, []);
 
   const { data: conversations, isLoading } = useListOpenrouterConversations();
   const deleteConversation = useDeleteOpenrouterConversation();

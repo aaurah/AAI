@@ -50,6 +50,15 @@ export default function Home() {
     setAutoSend(false);
   };
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text;
+      if (text) { setPrefilledInput(text); setAutoSend(false); }
+    };
+    window.addEventListener("send-to-chat", handler);
+    return () => window.removeEventListener("send-to-chat", handler);
+  }, []);
+
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-background">
       {isAuthed === false && <AuthModal onAuth={() => setIsAuthed(true)} />}

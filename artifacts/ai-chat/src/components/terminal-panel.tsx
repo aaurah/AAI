@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Terminal, ChevronRight, X, Copy, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { Terminal, ChevronRight, X, Copy, Maximize2, Minimize2, RotateCcw, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -239,6 +239,25 @@ export function TerminalPanel() {
           <span className="text-[9px] text-muted-foreground ml-1 font-mono truncate max-w-[150px]">{promptDir}</span>
         </div>
         <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-primary/60 hover:text-primary"
+            title="Send output to AI chat"
+            onClick={() => {
+              const output = lines
+                .filter(l => l.kind !== "system")
+                .map(l => l.text.replace(/\x1b\[[0-9;]*[mGKHFJABCDEFSTfhil]/g, "").replace(/\r/g, ""))
+                .join("")
+                .trim();
+              if (!output) return;
+              const last300 = output.length > 3000 ? "…" + output.slice(-3000) : output;
+              const text = `Terminal output:\n\`\`\`\n${last300}\n\`\`\`\nCan you help me understand this?`;
+              window.dispatchEvent(new CustomEvent("send-to-chat", { detail: { text } }));
+            }}
+          >
+            <MessageSquare className="h-3 w-3" />
+          </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" title="Copy all output"
             onClick={() => navigator.clipboard.writeText(lines.map(l => l.text).join(""))}>
             <Copy className="h-3 w-3" />

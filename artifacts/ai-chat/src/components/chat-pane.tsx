@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Send, Paperclip, X, ThumbsUp, ThumbsDown, Copy, Share2, Volume2, Mic,
   StopCircle, Plus, Github, Code2, Check, Search, Loader2, Cloud,
+  Play, Square, RotateCcw, MessageSquare,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -143,6 +144,133 @@ function splitCodeBlocks(text: string): Part[] {
   return result;
 }
 
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+const SHELL_LANGS = new Set(["bash", "sh", "shell", "zsh", "console", "terminal", "cmd", "fish"]);
+
+function stripAnsi(str: string): string {
+  return str.replace(/\x1b\[[0-9;]*[mGKHFJABCDEFSTfhil]/g, "").replace(/\r/g, "");
+}
+
+function RunBlock({ code, lang }: { code: string; lang: string }) {
+  const [state, setState] = useState<"idle" | "running" | "done">("idle");
+  const [chunks, setChunks] = useState<{ type: "stdout" | "stderr"; text: string }[]>([]);
+  const [exitCode, setExitCode] = useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  const handleRun = async () => {
+    const token = localStorage.getItem("auth_token");
+    if (!token) return;
+    setState("running");
+    setChunks([]);
+    setExitCode(null);
+    window.dispatchEvent(new CustomEvent("switch-to-terminal"));
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      const res = await fetch(`${BASE_URL}/api/terminal/exec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ command: code.trim() }),
+        signal: ac.signal,
+      });
+      if (!res.ok || !res.body) {
+        setChunks([{ type: "stderr", text: `HTTP ${res.status} ${res.statusText}` }]);
+        setState("done"); return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          try {
+            const evt = JSON.parse(line.slice(5).trim());
+            if (evt.type === "stdout") setChunks(p => [...p, { type: "stdout", text: evt.text }]);
+            else if (evt.type === "stderr") setChunks(p => [...p, { type: "stderr", text: evt.text }]);
+            else if (evt.type === "done") setExitCode(evt.exitCode ?? 0);
+          } catch {}
+        }
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") setChunks(p => [...p, { type: "stderr", text: e?.message || "Aborted" }]);
+    } finally {
+      setState("done");
+      abortRef.current = null;
+    }
+  };
+
+  const handleSendToAI = () => {
+    const output = chunks.map(c => stripAnsi(c.text)).join("").trim();
+    const text = `Terminal output for \`${code.trim().split("\n")[0]}\`:\n\`\`\`\n${output}${exitCode !== null && exitCode !== 0 ? `\n[exit ${exitCode}]` : ""}\n\`\`\`\n`;
+    window.dispatchEvent(new CustomEvent("send-to-chat", { detail: { text } }));
+  };
+
+  useEffect(() => {
+    if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight;
+  }, [chunks]);
+
+  const fullOutput = chunks.map(c => stripAnsi(c.text)).join("").trim();
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {state === "running" ? (
+          <button
+            onClick={() => { abortRef.current?.abort(); setState("done"); }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors border border-red-500/20"
+          >
+            <Square className="h-3 w-3" /> Stop
+          </button>
+        ) : (
+          <button
+            onClick={handleRun}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-green-500/15 hover:bg-green-500/25 text-green-400 text-[10px] font-medium transition-colors border border-green-500/20"
+          >
+            {state === "done" ? <RotateCcw className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            {state === "done" ? "Re-run" : "Run in Terminal"}
+          </button>
+        )}
+        {state === "running" && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/60" />}
+        {state === "done" && exitCode !== null && (
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${exitCode === 0 ? "text-green-400 bg-green-500/8 border-green-500/20" : "text-red-400 bg-red-500/8 border-red-500/20"}`}>
+            exit {exitCode}
+          </span>
+        )}
+        {state === "done" && fullOutput && (
+          <button
+            onClick={handleSendToAI}
+            className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-primary/60 hover:text-primary hover:bg-primary/10 transition-colors"
+            title="Send output to AI chat"
+          >
+            <MessageSquare className="h-3 w-3" /> Ask AI about output
+          </button>
+        )}
+      </div>
+
+      {state !== "idle" && chunks.length > 0 && (
+        <div
+          ref={outputRef}
+          className="rounded-lg bg-[#070b14] border border-white/8 px-3 py-2 font-mono text-[11px] leading-[1.6] max-h-52 overflow-y-auto whitespace-pre-wrap break-all"
+        >
+          {chunks.map((c, i) => (
+            <span key={i} className={c.type === "stderr" ? "text-red-400/90" : "text-emerald-300/90"}>
+              {stripAnsi(c.text)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CopyCodeBtn({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -206,6 +334,7 @@ function MessageContent({
           );
         }
         const { lang, filename, code } = part;
+        const isShell = SHELL_LANGS.has((lang || "").toLowerCase());
         return (
           <div key={i} className="my-3 rounded-xl overflow-hidden border border-white/10 text-left">
             <div className="flex items-center justify-between bg-black/40 px-3 py-2">
@@ -229,6 +358,11 @@ function MessageContent({
             <pre className="p-3 text-[12.5px] leading-relaxed overflow-x-auto bg-[#0d1117] text-[#e6edf3] font-mono">
               <code>{code}</code>
             </pre>
+            {isShell && (
+              <div className="px-3 pb-3 bg-[#0d1117] border-t border-white/5">
+                <RunBlock code={code} lang={lang} />
+              </div>
+            )}
           </div>
         );
       })}
