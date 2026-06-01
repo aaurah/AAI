@@ -733,10 +733,10 @@ When the user asks about this project, answer based on the repository context ab
   return (
     <div className="flex h-full flex-col bg-background relative">
       {/* Header */}
-      <div className="flex h-14 items-center border-b px-4 flex-shrink-0 relative">
+      <div className="flex h-11 items-center border-b border-border/50 px-4 flex-shrink-0 relative glass">
         <div className="ml-10 md:ml-0 flex-1 flex justify-center md:justify-start">
           <Select value={model} onValueChange={setModel}>
-            <SelectTrigger className="border-0 bg-transparent shadow-none focus:ring-0 text-base font-semibold gap-1 w-auto px-0">
+            <SelectTrigger className="border-0 bg-transparent shadow-none focus:ring-0 text-[13px] font-semibold gap-1 w-auto px-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="max-h-[60vh] overflow-y-auto">
@@ -804,8 +804,8 @@ When the user asks about this project, answer based on the repository context ab
 
       {/* Active repo banner */}
       {activeRepo && (
-        <div className="flex justify-center py-1.5 border-b border-border/40 shrink-0 bg-primary/5">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs text-muted-foreground border border-primary/20 bg-background/80">
+        <div className="flex justify-center py-1 border-b border-border/30 shrink-0 glass">
+          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] text-muted-foreground border border-primary/20 bg-primary/5">
             <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
             <Github className="h-3 w-3 text-primary/70 shrink-0" />
             <span className="font-medium text-foreground max-w-[200px] truncate">{activeRepo.fullName}</span>
@@ -857,10 +857,12 @@ When the user asks about this project, answer based on the repository context ab
             const isAssistant = msg.role !== "user";
             return (
               <div key={msg.id} className={`group flex w-full flex-col ${isAssistant ? "items-start" : "items-end"}`}>
-                <div className={`max-w-[88%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed ${
-                  isAssistant ? "bg-muted text-foreground" : "bg-primary text-primary-foreground"
-                } ${likeState === "like" ? "ring-2 ring-green-500 ring-offset-2 ring-offset-background" : ""}
-                   ${likeState === "dislike" ? "ring-2 ring-red-500 ring-offset-2 ring-offset-background" : ""}` }>
+                <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed relative overflow-hidden ${
+                  isAssistant
+                    ? "glass-subtle border border-border/40 text-foreground"
+                    : "glossy bg-primary text-primary-foreground border border-primary/30 shadow-md shadow-primary/10"
+                } ${likeState === "like" ? "ring-1 ring-green-500 ring-offset-1 ring-offset-background" : ""}
+                   ${likeState === "dislike" ? "ring-1 ring-red-500 ring-offset-1 ring-offset-background" : ""}` }>
                   {parsed.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
                       {parsed.attachments.map((att: any, i: number) => (
@@ -914,7 +916,7 @@ When the user asks about this project, answer based on the repository context ab
 
           {isStreaming && (
             <div className="flex w-full justify-start">
-              <div className="max-w-[88%] rounded-2xl px-4 py-3 bg-muted text-foreground">
+              <div className="max-w-[88%] rounded-2xl px-3.5 py-2.5 glass-subtle border border-border/40 text-foreground text-[13px] leading-relaxed">
                 <MessageContent text={streamingContent} activeRepo={activeRepo} onCommit={handleCommitOpen} />
                 <span className="ml-1 inline-block h-4 w-2 bg-primary animate-pulse align-middle" />
               </div>
@@ -924,44 +926,44 @@ When the user asks about this project, answer based on the repository context ab
       </div>
 
       {/* Input Area */}
-      <div className="border-t bg-card p-4 flex-shrink-0">
-        <div className="mx-auto max-w-3xl space-y-2">
+      <div className="border-t border-border/40 glass p-3 flex-shrink-0">
+        <div className="mx-auto max-w-3xl space-y-1.5">
 
           {/* Top bar: + button + repo badge + queue indicator */}
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8 rounded-full shrink-0"
+              className="h-7 w-7 rounded-full shrink-0 glass border-border/50"
               onClick={() => fileInputRef.current?.click()}
               disabled={attachments.length >= 4}
               data-testid="attach-btn"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
             </Button>
 
             {hasToken ? (
               <button
                 onClick={handleOpenRepoPicker}
-                className="flex items-center gap-1.5 h-8 px-3 rounded-full border border-border bg-background hover:bg-muted transition-colors text-xs font-medium"
+                className="flex items-center gap-1 h-7 px-2.5 rounded-full border border-border/50 glass hover:bg-muted/40 transition-colors text-[11px] font-medium"
                 data-testid="repo-picker-trigger"
               >
-                <Github className="h-3.5 w-3.5 text-muted-foreground" />
+                <Github className="h-3 w-3 text-muted-foreground" />
                 <span className="text-muted-foreground max-w-[120px] truncate">
                   {activeRepo ? activeRepo.fullName : "Choose repo"}
                 </span>
                 {activeRepo && (
-                  <X className="h-3 w-3 text-muted-foreground hover:text-foreground ml-0.5" onClick={handleClearRepo} />
+                  <X className="h-2.5 w-2.5 text-muted-foreground hover:text-foreground ml-0.5" onClick={handleClearRepo} />
                 )}
               </button>
             ) : null}
 
             {queuedMessage && (
-              <div className="flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-medium border border-primary/20 ml-auto">
-                <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <div className="flex items-center gap-1.5 bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-[10px] font-medium border border-primary/20 ml-auto">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                 1 queued
-                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] hover:bg-primary/20" onClick={() => abortControllerRef.current?.abort()} data-testid="force-send-btn">
-                  <X className="h-3 w-3 mr-0.5" /> Force
+                <Button variant="ghost" size="sm" className="h-4 px-1 text-[10px] hover:bg-primary/20" onClick={() => abortControllerRef.current?.abort()} data-testid="force-send-btn">
+                  <X className="h-2.5 w-2.5 mr-0.5" /> Force
                 </Button>
               </div>
             )}
@@ -998,42 +1000,42 @@ When the user asks about this project, answer based on the repository context ab
           )}
 
           {/* Input card */}
-          <div className="rounded-xl border bg-background shadow-sm focus-within:ring-1 focus-within:ring-primary transition-shadow overflow-hidden">
+          <div className="rounded-xl border border-border/50 glass shadow-sm focus-within:ring-1 focus-within:ring-primary/60 transition-all overflow-hidden glossy relative">
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" multiple onChange={handleFileChange} />
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={activeRepo ? "Code anything..." : "Message..."}
-              className="min-h-[52px] max-h-48 w-full resize-none border-0 bg-transparent py-3.5 px-4 focus-visible:ring-0 rounded-none shadow-none text-[15px]"
+              className="min-h-[46px] max-h-40 w-full resize-none border-0 bg-transparent py-3 px-4 focus-visible:ring-0 rounded-none shadow-none text-[13px]"
               rows={1}
             />
             {/* Bottom bar of input card */}
-            <div className="flex items-center justify-between px-3 py-2 border-t border-border/40">
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Code2 className="h-3.5 w-3.5" />
+            <div className="flex items-center justify-between px-2.5 py-1.5 border-t border-border/30">
+              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Code2 className="h-3 w-3" />
                 <span className="font-medium">Code</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 {supportsSpeech && (
-                  <Button variant="ghost" size="icon" className={`h-8 w-8 transition-colors ${isListening ? "text-red-500 animate-pulse bg-red-500/10" : "text-muted-foreground hover:text-foreground"}`} onClick={toggleListen} data-testid="mic-btn">
-                    <Mic className="h-4 w-4" />
+                  <Button variant="ghost" size="icon" className={`h-7 w-7 transition-colors ${isListening ? "text-red-500 animate-pulse bg-red-500/10" : "text-muted-foreground hover:text-foreground"}`} onClick={toggleListen} data-testid="mic-btn">
+                    <Mic className="h-3.5 w-3.5" />
                   </Button>
                 )}
                 <Button
                   size="icon"
-                  className={`h-8 w-8 rounded-lg transition-all ${input.trim() || attachments.length > 0 ? "opacity-100" : "opacity-40"}`}
+                  className={`h-7 w-7 rounded-lg transition-all glossy relative overflow-hidden ${input.trim() || attachments.length > 0 ? "opacity-100" : "opacity-40"}`}
                   disabled={!input.trim() && attachments.length === 0}
                   onClick={() => handleSend()}
                   data-testid="send-btn"
                 >
-                  <Send className="h-4 w-4" />
+                  <Send className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
           </div>
 
-          <p className="text-center text-[11px] text-muted-foreground">AI can make mistakes. Verify important information.</p>
+          <p className="text-center text-[10px] text-muted-foreground/60">AI can make mistakes. Verify important information.</p>
         </div>
       </div>
 

@@ -87,12 +87,12 @@ function ConversationItem({
   if (isDeleting) return null;
 
   return (
-    <div className="relative overflow-hidden rounded-md" data-testid={`conv-item-${conv.id}`}>
+    <div className="relative overflow-hidden rounded-lg" data-testid={`conv-item-${conv.id}`}>
       <div
-        className={`absolute inset-y-0 right-0 flex items-center justify-center transition-colors rounded-md ${pastThreshold ? "bg-destructive" : "bg-destructive/70"}`}
+        className={`absolute inset-y-0 right-0 flex items-center justify-center transition-colors rounded-lg ${pastThreshold ? "bg-destructive" : "bg-destructive/70"}`}
         style={{ width: Math.abs(clampedOffset) || 0 }}
       >
-        {deleteVisible && <Trash2 className="h-4 w-4 text-white shrink-0" />}
+        {deleteVisible && <Trash2 className="h-3.5 w-3.5 text-white shrink-0" />}
       </div>
 
       <Link href={`/c/${conv.id}`}>
@@ -104,23 +104,27 @@ function ConversationItem({
           onMouseDown={handleMouseDown}
           onClick={offset === 0 ? onCloseMobile : undefined}
           style={{ transform: `translateX(${clampedOffset}px)`, transition: swipeRef.current.swiping ? "none" : "transform 0.2s ease" }}
-          className={`group flex items-center justify-between rounded-md px-3 py-2 text-sm cursor-pointer select-none ${isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : "bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent/50"}`}
+          className={`group flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] cursor-pointer select-none transition-colors ${
+            isActive
+              ? "glass border border-primary/20 text-sidebar-accent-foreground font-medium bg-primary/8"
+              : "text-sidebar-foreground hover:bg-sidebar-accent/40"
+          }`}
           data-testid={`conv-row-${conv.id}`}
         >
-          <div className="flex items-center gap-2 overflow-hidden">
-            <MessageSquare className="h-4 w-4 shrink-0 opacity-70" />
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <MessageSquare className="h-3 w-3 shrink-0 opacity-60" />
             <div className="flex flex-col overflow-hidden">
-              <span className="truncate">{conv.title || "New Chat"}</span>
-              <span className="text-[10px] opacity-50">{format(new Date(conv.createdAt), "MMM d, h:mm a")}</span>
+              <span className="truncate leading-snug">{conv.title || "New Chat"}</span>
+              <span className="text-[9px] opacity-40 leading-tight">{format(new Date(conv.createdAt), "MMM d, h:mm a")}</span>
             </div>
           </div>
           <button
             data-testid={`conv-delete-btn-${conv.id}`}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(conv.id); }}
-            className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-opacity shrink-0"
+            className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity shrink-0"
             title="Delete"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3 w-3" />
           </button>
         </div>
       </Link>
@@ -153,19 +157,23 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
   return (
     <div className="flex h-full w-[272px] bg-sidebar">
       {/* Icon Rail */}
-      <div className="w-[52px] flex flex-col items-center py-4 border-r border-sidebar-border bg-sidebar gap-4 flex-shrink-0 z-10">
+      <div className="w-[46px] flex flex-col items-center py-3 border-r border-sidebar-border/60 gap-1 flex-shrink-0 z-10 glass">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 data-testid="tab-chats"
                 onClick={() => setActiveTab("chats")}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${activeTab === "chats" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
+                  activeTab === "chats"
+                    ? "bg-primary/15 text-primary shadow-sm glossy relative"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                }`}
               >
-                <MessageSquare className="h-5 w-5" />
+                <MessageSquare className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Chats</TooltipContent>
+            <TooltipContent side="right" className="text-[11px]">Chats</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -173,12 +181,16 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
               <button
                 data-testid="tab-code"
                 onClick={() => setActiveTab("code")}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${activeTab === "code" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
+                  activeTab === "code"
+                    ? "bg-primary/15 text-primary shadow-sm glossy relative"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                }`}
               >
-                <Code2 className="h-5 w-5" />
+                <Code2 className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Code</TooltipContent>
+            <TooltipContent side="right" className="text-[11px]">Code</TooltipContent>
           </Tooltip>
         </TooltipProvider>
 
@@ -187,32 +199,37 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
             <Tooltip>
               <TooltipTrigger asChild>
                 <Link href="/settings">
-                  <button className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors" data-testid="settings-btn">
-                    <Settings className="h-5 w-5" />
+                  <button className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors" data-testid="settings-btn">
+                    <Settings className="h-4 w-4" />
                   </button>
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="right">Settings</TooltipContent>
+              <TooltipContent side="right" className="text-[11px]">Settings</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </div>
       </div>
 
       {/* Content Panel */}
-      <div className="flex-1 flex flex-col min-w-0 bg-sidebar">
+      <div className="flex-1 flex flex-col min-w-0 bg-sidebar/80">
         {activeTab === "chats" && (
           <>
-            <div className="p-4 border-b border-sidebar-border">
-              <Button onClick={handleNew} className="w-full justify-start gap-2" variant="default" data-testid="new-conversation-btn">
-                <Plus className="h-4 w-4" />
+            <div className="p-3 border-b border-sidebar-border/50">
+              <Button
+                onClick={handleNew}
+                className="w-full justify-start gap-2 h-8 text-[11px] rounded-lg glossy relative overflow-hidden"
+                variant="default"
+                data-testid="new-conversation-btn"
+              >
+                <Plus className="h-3.5 w-3.5" />
                 New Conversation
               </Button>
             </div>
             <ScrollArea className="flex-1">
-              <div className="p-2 space-y-1">
-                {isLoading && <div className="px-2 py-4 text-center text-sm text-muted-foreground">Loading...</div>}
+              <div className="p-1.5 space-y-0.5">
+                {isLoading && <div className="px-2 py-4 text-center text-[11px] text-muted-foreground">Loading...</div>}
                 {!isLoading && (!conversations || conversations.length === 0) && (
-                  <div className="px-2 py-8 text-center text-sm text-muted-foreground">No conversations yet</div>
+                  <div className="px-2 py-8 text-center text-[11px] text-muted-foreground">No conversations yet</div>
                 )}
                 {conversations?.map((conv) => (
                   <ConversationItem key={conv.id} conv={conv} isActive={activeId === conv.id} onDelete={handleDelete} onCloseMobile={onCloseMobile} />
