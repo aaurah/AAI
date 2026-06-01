@@ -226,7 +226,7 @@ export function TerminalPanel() {
     }
   };
 
-  const cwdShort = cwd.replace(process?.env?.HOME || "/home/runner", "~").replace(/\/home\/runner\/workspace/, "~/workspace");
+  const cwdShort = cwd.replace(/\/home\/runner\/workspace/, "~/workspace").replace(/\/home\/runner/, "~");
   const promptDir = cwd ? cwdShort : "~";
 
   return (
