@@ -46,7 +46,7 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
   return { userId: user.id };
 }
 
-// Free models verified live from openrouter.ai/api/v1/models — updated 2026-06-01
+// All free OpenRouter models verified 2026-06-01 (excludes uncensored models blocked by proxy)
 const MODELS: Record<string, string> = {
   // Meta Llama
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct:free",
@@ -57,16 +57,25 @@ const MODELS: Record<string, string> = {
   // Qwen 3
   "qwen3-coder": "qwen/qwen3-coder:free",
   "qwen3": "qwen/qwen3-next-80b-a3b-instruct:free",
-  // OpenAI OSS (community weights)
+  // OpenAI OSS
   "gpt-oss": "openai/gpt-oss-120b:free",
   "gpt-oss-small": "openai/gpt-oss-20b:free",
   // Moonshot / Kimi
   "kimi-k2": "moonshotai/kimi-k2.6:free",
-  // Nous Research
-  "hermes": "nousresearch/hermes-3-llama-3.1-405b:free",
   // NVIDIA Nemotron
   "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
-  "nemotron-small": "nvidia/nemotron-3-nano-30b-a3b:free",
+  "nemotron-nano": "nvidia/nemotron-3-nano-30b-a3b:free",
+  "nemotron-omni": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "nemotron-vl": "nvidia/nemotron-nano-12b-v2-vl:free",
+  "nemotron-9b": "nvidia/nemotron-nano-9b-v2:free",
+  // Poolside Laguna
+  "laguna-m": "poolside/laguna-m.1:free",
+  "laguna-xs": "poolside/laguna-xs.2:free",
+  // LiquidAI
+  "lfm": "liquid/lfm-2.5-1.2b-instruct:free",
+  "lfm-thinking": "liquid/lfm-2.5-1.2b-thinking:free",
+  // Z.ai
+  "glm": "z-ai/glm-4.5-air:free",
 };
 
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
@@ -656,14 +665,18 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     }
 
     // ── OpenRouter branch (via Replit AI Integrations proxy — no API key needed) ──
-    // Fallback free models (verified 2026-06-01) — tried in order when primary is 429
+    // Fallback chain — all verified free models, proxy-safe (no uncensored)
     const OR_FALLBACK_MODELS = [
       "meta-llama/llama-3.3-70b-instruct:free",
       "google/gemma-4-31b-it:free",
       "qwen/qwen3-coder:free",
-      "openai/gpt-oss-20b:free",
-      "meta-llama/llama-3.2-3b-instruct:free",
+      "openai/gpt-oss-120b:free",
       "moonshotai/kimi-k2.6:free",
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "qwen/qwen3-next-80b-a3b-instruct:free",
+      "openai/gpt-oss-20b:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "meta-llama/llama-3.2-3b-instruct:free",
     ];
 
     const modelsToTry = [modelName, ...OR_FALLBACK_MODELS.filter((m) => m !== modelName)].slice(0, 6);

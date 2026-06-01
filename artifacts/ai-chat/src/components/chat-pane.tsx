@@ -46,18 +46,34 @@ interface GHRepo {
 }
 
 const OPENROUTER_MODELS = [
-  { id: "llama-3.3", name: "Llama 3.3 70B" },
-  { id: "llama-3.2", name: "Llama 3.2 3B (Fast)" },
-  { id: "gemma-4", name: "Gemma 4 31B" },
-  { id: "gemma-4-small", name: "Gemma 4 26B" },
-  { id: "qwen3-coder", name: "Qwen3 Coder" },
-  { id: "qwen3", name: "Qwen3 80B" },
-  { id: "gpt-oss", name: "GPT-OSS 120B" },
-  { id: "gpt-oss-small", name: "GPT-OSS 20B (Fast)" },
-  { id: "kimi-k2", name: "Kimi K2.6" },
-  { id: "hermes", name: "Hermes 3 405B" },
-  { id: "nemotron", name: "Nemotron 120B" },
-  { id: "nemotron-small", name: "Nemotron 30B" },
+  // Meta Llama
+  { id: "llama-3.3",       name: "Llama 3.3 70B" },
+  { id: "llama-3.2",       name: "Llama 3.2 3B (Fast)" },
+  // Google Gemma 4
+  { id: "gemma-4",         name: "Gemma 4 31B" },
+  { id: "gemma-4-small",   name: "Gemma 4 26B" },
+  // Qwen 3
+  { id: "qwen3-coder",     name: "Qwen3 Coder 480B" },
+  { id: "qwen3",           name: "Qwen3 80B" },
+  // OpenAI OSS
+  { id: "gpt-oss",         name: "GPT-OSS 120B" },
+  { id: "gpt-oss-small",   name: "GPT-OSS 20B (Fast)" },
+  // Moonshot / Kimi
+  { id: "kimi-k2",         name: "Kimi K2.6" },
+  // NVIDIA Nemotron
+  { id: "nemotron",        name: "Nemotron 3 Super 120B" },
+  { id: "nemotron-nano",   name: "Nemotron 3 Nano 30B" },
+  { id: "nemotron-omni",   name: "Nemotron 3 Omni (Reasoning)" },
+  { id: "nemotron-vl",     name: "Nemotron 12B (Vision)" },
+  { id: "nemotron-9b",     name: "Nemotron 9B (Fast)" },
+  // Poolside Laguna
+  { id: "laguna-m",        name: "Laguna M.1" },
+  { id: "laguna-xs",       name: "Laguna XS.2 (Fast)" },
+  // LiquidAI
+  { id: "lfm",             name: "LFM 1.2B (Ultra Fast)" },
+  { id: "lfm-thinking",    name: "LFM 1.2B Thinking" },
+  // Z.ai
+  { id: "glm",             name: "GLM 4.5 Air" },
 ];
 
 const ANTHROPIC_MODELS = [
