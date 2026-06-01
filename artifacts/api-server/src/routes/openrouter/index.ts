@@ -54,7 +54,6 @@ const MODELS: Record<string, string> = {
   "llama-3.2": "meta-llama/llama-3.2-3b-instruct:free",
   // Google Gemma 4
   "gemma-4": "google/gemma-4-31b-it:free",
-  "gemma-4-small": "google/gemma-4-26b-a4b-it:free",
   // Qwen 3
   "qwen3-coder": "qwen/qwen3-coder:free",
   "qwen3": "qwen/qwen3-next-80b-a3b-instruct:free",
@@ -735,7 +734,6 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       "nvidia/nemotron-3-super-120b-a12b:free",
       "qwen/qwen3-next-80b-a3b-instruct:free",
       "openai/gpt-oss-20b:free",
-      "google/gemma-4-26b-a4b-it:free",
       "meta-llama/llama-3.2-3b-instruct:free",
     ];
 
@@ -770,8 +768,11 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         break;
       } catch (err: any) {
         const status = err?.status ?? err?.statusCode ?? 0;
-        if (status === 429) {
-          console.warn(`[openrouter] ${tryModel} rate-limited (429), trying fallback...`);
+        const errMsg = err?.message ?? String(err);
+        const isGuardrail = status === 404 && errMsg.toLowerCase().includes("guardrail");
+        if (status === 429 || isGuardrail) {
+          const reason = isGuardrail ? "blocked by proxy guardrails" : "rate-limited (429)";
+          console.warn(`[openrouter] ${tryModel} ${reason}, trying fallback...`);
           continue;
         }
         console.error(`[openrouter] model=${tryModel} error:`, err?.message ?? err);

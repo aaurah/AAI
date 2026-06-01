@@ -51,7 +51,6 @@ const OPENROUTER_MODELS = [
   { id: "llama-3.2",       name: "Llama 3.2 3B (Fast)" },
   // Google Gemma 4
   { id: "gemma-4",         name: "Gemma 4 31B" },
-  { id: "gemma-4-small",   name: "Gemma 4 26B" },
   // Qwen 3
   { id: "qwen3-coder",     name: "Qwen3 Coder 480B" },
   { id: "qwen3",           name: "Qwen3 80B" },
