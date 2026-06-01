@@ -47,17 +47,17 @@ interface GHRepo {
 
 const OPENROUTER_MODELS = [
   { id: "llama-3.3", name: "Llama 3.3 70B" },
-  { id: "llama-4-scout", name: "Llama 4 Scout (Vision)" },
-  { id: "llama-3.1-8b", name: "Llama 3.1 8B (Fast)" },
-  { id: "deepseek-r1", name: "DeepSeek R1 (Reasoning)" },
-  { id: "deepseek-v3", name: "DeepSeek V3" },
-  { id: "qwen", name: "QwQ-32B (Reasoning)" },
-  { id: "qwen-2.5", name: "Qwen 2.5 72B" },
-  { id: "gemma", name: "Gemma 2 9B" },
-  { id: "gemma-3-27b", name: "Gemma 3 27B" },
-  { id: "mistral", name: "Mistral 7B" },
-  { id: "mistral-nemo", name: "Mistral Nemo 12B" },
-  { id: "phi-4", name: "Phi-4 Reasoning" },
+  { id: "llama-3.2", name: "Llama 3.2 3B (Fast)" },
+  { id: "gemma-4", name: "Gemma 4 31B" },
+  { id: "gemma-4-small", name: "Gemma 4 26B" },
+  { id: "qwen3-coder", name: "Qwen3 Coder" },
+  { id: "qwen3", name: "Qwen3 80B" },
+  { id: "gpt-oss", name: "GPT-OSS 120B" },
+  { id: "gpt-oss-small", name: "GPT-OSS 20B (Fast)" },
+  { id: "kimi-k2", name: "Kimi K2.6" },
+  { id: "hermes", name: "Hermes 3 405B" },
+  { id: "nemotron", name: "Nemotron 120B" },
+  { id: "nemotron-small", name: "Nemotron 30B" },
 ];
 
 const ANTHROPIC_MODELS = [

@@ -46,26 +46,27 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
   return { userId: user.id };
 }
 
-// All models target the :free tier so no OpenRouter credits are needed.
+// Free models verified live from openrouter.ai/api/v1/models — updated 2026-06-01
 const MODELS: Record<string, string> = {
   // Meta Llama
   "llama-3.3": "meta-llama/llama-3.3-70b-instruct:free",
-  "llama-4-scout": "meta-llama/llama-4-scout:free",
-  "llama-3.1-8b": "meta-llama/llama-3.1-8b-instruct:free",
-  // Mistral
-  "mistral": "mistralai/mistral-7b-instruct:free",
-  "mistral-nemo": "mistralai/mistral-nemo:free",
-  // Google
-  "gemma": "google/gemma-2-9b-it:free",
-  "gemma-3-27b": "google/gemma-3-27b-it:free",
-  // DeepSeek
-  "deepseek-r1": "deepseek/deepseek-r1:free",
-  "deepseek-v3": "deepseek/deepseek-chat-v3-5:free",
-  // Qwen
-  "qwen": "qwen/qwq-32b:free",
-  "qwen-2.5": "qwen/qwen-2.5-72b-instruct:free",
-  // Microsoft
-  "phi-4": "microsoft/phi-4-reasoning:free",
+  "llama-3.2": "meta-llama/llama-3.2-3b-instruct:free",
+  // Google Gemma 4
+  "gemma-4": "google/gemma-4-31b-it:free",
+  "gemma-4-small": "google/gemma-4-26b-a4b-it:free",
+  // Qwen 3
+  "qwen3-coder": "qwen/qwen3-coder:free",
+  "qwen3": "qwen/qwen3-next-80b-a3b-instruct:free",
+  // OpenAI OSS (community weights)
+  "gpt-oss": "openai/gpt-oss-120b:free",
+  "gpt-oss-small": "openai/gpt-oss-20b:free",
+  // Moonshot / Kimi
+  "kimi-k2": "moonshotai/kimi-k2.6:free",
+  // Nous Research
+  "hermes": "nousresearch/hermes-3-llama-3.1-405b:free",
+  // NVIDIA Nemotron
+  "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
+  "nemotron-small": "nvidia/nemotron-3-nano-30b-a3b:free",
 };
 
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
@@ -655,14 +656,14 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     }
 
     // ── OpenRouter branch (via Replit AI Integrations proxy — no API key needed) ──
-    // Fallback free models to try when the primary is rate-limited (429)
+    // Fallback free models (verified 2026-06-01) — tried in order when primary is 429
     const OR_FALLBACK_MODELS = [
       "meta-llama/llama-3.3-70b-instruct:free",
-      "google/gemma-3-27b-it:free",
-      "deepseek/deepseek-r1:free",
+      "google/gemma-4-31b-it:free",
       "qwen/qwen3-coder:free",
+      "openai/gpt-oss-20b:free",
       "meta-llama/llama-3.2-3b-instruct:free",
-      "mistralai/mistral-7b-instruct:free",
+      "moonshotai/kimi-k2.6:free",
     ];
 
     const modelsToTry = [modelName, ...OR_FALLBACK_MODELS.filter((m) => m !== modelName)].slice(0, 6);
