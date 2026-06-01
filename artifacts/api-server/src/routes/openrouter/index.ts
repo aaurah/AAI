@@ -822,9 +822,57 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     }
 
     if (!stream) {
-      await streamInlineError(
-        "⚠️ All free OpenRouter models are currently rate-limited. Try again in a moment, or switch to a **GitHub model** (e.g. GPT-4o) using the model selector at the top."
-      );
+      // All OpenRouter models rate-limited → auto-fallback to Gemini Flash (separate API, no shared rate limit)
+      console.info("[openrouter] all OR models exhausted — auto-falling back to Gemini Flash");
+      const fallbackGeminiModel = "gemini-2.5-flash-preview-05-20";
+      const fallbackGeminiKey = `gemini:${fallbackGeminiModel}`;
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const fbContents = messagesWithSystem
+        .filter((m: any) => m.role !== "system")
+        .map((m: any) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: Array.isArray(m.content)
+            ? m.content.map((p: any) =>
+                p.type === "image_url"
+                  ? { inlineData: { mimeType: "image/jpeg", data: p.image_url.url.replace(/^data:[^;]+;base64,/, "") } }
+                  : { text: p.text ?? "" }
+              )
+            : [{ text: typeof m.content === "string" ? m.content : "" }],
+        }));
+      const fbSystem = messagesWithSystem.find((m: any) => m.role === "system");
+      if (fbSystem) {
+        fbContents.unshift({ role: "user", parts: [{ text: fbSystem.content as string }] });
+        fbContents.splice(1, 0, { role: "model", parts: [{ text: "Understood." }] });
+      }
+
+      try {
+        res.write(`data: ${JSON.stringify({ content: "*[Auto-switched to Gemini Flash — OpenRouter rate limited]*\n\n" })}\n\n`);
+        const fbStream = await geminiAI.models.generateContentStream({
+          model: fallbackGeminiModel,
+          contents: fbContents,
+          config: { maxOutputTokens: 8192 },
+        });
+        let fbFull = "*[Auto-switched to Gemini Flash — OpenRouter rate limited]*\n\n";
+        for await (const chunk of fbStream) {
+          const text = chunk.text;
+          if (text) {
+            fbFull += text;
+            res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+          }
+        }
+        setModelStatus(fallbackGeminiKey, "ok");
+        await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fbFull }).catch(() => {});
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+      } catch (fbErr: any) {
+        setModelStatus(fallbackGeminiKey, "blocked");
+        await streamInlineError(
+          "⚠️ All free OpenRouter models are rate-limited and Gemini fallback also failed. Please try again in a moment, or switch to **Gemini Flash** or a **GitHub model** using the model selector."
+        );
+      }
       return;
     }
 
