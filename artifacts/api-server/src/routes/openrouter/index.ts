@@ -47,6 +47,31 @@ async function requireAuth(req: any, res: any): Promise<{ userId: number } | nul
   return { userId: user.id };
 }
 
+// ── Model status cache ──────────────────────────────────────────────────────
+type ModelStatus = "ok" | "blocked" | "rate_limited";
+interface StatusEntry { status: ModelStatus; updatedAt: number }
+const modelStatusCache = new Map<string, StatusEntry>();
+const STATUS_TTL: Record<ModelStatus, number> = {
+  ok: 10 * 60_000,         // 10 min — working models stay green
+  blocked: 30 * 60_000,    // 30 min — guardrail blocks are semi-permanent
+  rate_limited: 2 * 60_000, // 2 min  — rate limits are transient
+};
+
+function setModelStatus(key: string, status: ModelStatus) {
+  modelStatusCache.set(key, { status, updatedAt: Date.now() });
+}
+
+function getModelStatuses(): Record<string, ModelStatus> {
+  const now = Date.now();
+  const result: Record<string, ModelStatus> = {};
+  for (const [key, entry] of modelStatusCache.entries()) {
+    if (now - entry.updatedAt < STATUS_TTL[entry.status]) {
+      result[key] = entry.status;
+    }
+  }
+  return result;
+}
+
 // All free OpenRouter models verified 2026-06-01 (excludes uncensored models blocked by proxy)
 const MODELS: Record<string, string> = {
   // Meta Llama
@@ -78,7 +103,17 @@ const MODELS: Record<string, string> = {
   "glm": "z-ai/glm-4.5-air:free",
 };
 
+// Reverse map: full OpenRouter model ID → short frontend key
+const MODEL_KEYS: Record<string, string> = Object.fromEntries(
+  Object.entries(MODELS).map(([k, v]) => [v, k])
+);
+
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+// ── GET /openrouter/models/status — returns live status of all tracked models ──
+router.get("/openrouter/models/status", (_req, res) => {
+  res.json(getModelStatuses());
+});
 
 const BASE_SYSTEM_PROMPT = `You are an AI coding assistant built into a full-featured AI chat application. Here is everything you need to know about the app and your role:
 
@@ -695,6 +730,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       }
 
       let fullResponse = "";
+      const geminiStatusKey = `gemini:${modelName}`;
       try {
         const stream = await geminiAI.models.generateContentStream({
           model: modelName,
@@ -708,7 +744,9 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
             res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
           }
         }
+        setModelStatus(geminiStatusKey, "ok");
       } catch (err: any) {
+        setModelStatus(geminiStatusKey, "blocked");
         const msg = `⚠️ Gemini error: ${err?.message ?? String(err)}`;
         res.write(`data: ${JSON.stringify({ content: msg })}\n\n`);
         await db.insert(messagesTable).values({ conversationId, role: "assistant", content: msg }).catch(() => {});
@@ -765,6 +803,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         });
         stream = attempt;
         usedModel = tryModel;
+        setModelStatus(MODEL_KEYS[tryModel] ?? tryModel, "ok");
         break;
       } catch (err: any) {
         const status = err?.status ?? err?.statusCode ?? 0;
@@ -772,6 +811,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         const isGuardrail = status === 404 && errMsg.toLowerCase().includes("guardrail");
         if (status === 429 || isGuardrail) {
           const reason = isGuardrail ? "blocked by proxy guardrails" : "rate-limited (429)";
+          setModelStatus(MODEL_KEYS[tryModel] ?? tryModel, isGuardrail ? "blocked" : "rate_limited");
           console.warn(`[openrouter] ${tryModel} ${reason}, trying fallback...`);
           continue;
         }

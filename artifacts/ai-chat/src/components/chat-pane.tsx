@@ -156,6 +156,28 @@ function CopyCodeBtn({ code }: { code: string }) {
   );
 }
 
+function ModelStatusRow({ name, status }: { name: string; status?: "ok" | "blocked" | "rate_limited" }) {
+  const dot =
+    status === "ok"
+      ? "bg-green-500"
+      : status === "blocked"
+        ? "bg-red-500"
+        : status === "rate_limited"
+          ? "bg-yellow-400"
+          : "bg-muted-foreground/30";
+  const title =
+    status === "ok" ? "Working" :
+    status === "blocked" ? "Blocked by proxy" :
+    status === "rate_limited" ? "Rate limited (temporary)" :
+    "Not yet tested";
+  return (
+    <span className="flex items-center gap-2">
+      <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} title={title} />
+      {name}
+    </span>
+  );
+}
+
 function encodeBase64(str: string): string {
   const bytes = new TextEncoder().encode(str);
   let binary = "";
@@ -240,6 +262,7 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
 
   const [sendError, setSendError] = useState<string | null>(null);
   const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
+  const [modelStatuses, setModelStatuses] = useState<Record<string, "ok" | "blocked" | "rate_limited">>({});
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -270,6 +293,16 @@ export function ChatPane({ conversationId, prefilledInput, autoSend, repoContext
       .then((r) => r.ok ? r.json() : {})
       .then((data: Record<string, boolean>) => setProviderStatus(data))
       .catch(() => {});
+
+    const fetchModelStatuses = () =>
+      fetch("/api/openrouter/models/status")
+        .then((r) => r.ok ? r.json() : {})
+        .then((data: Record<string, "ok" | "blocked" | "rate_limited">) => setModelStatuses(data))
+        .catch(() => {});
+
+    fetchModelStatuses();
+    const interval = setInterval(fetchModelStatuses, 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   const [activeRepo, setActiveRepo] = useState<RepoContext | null>(() => {
@@ -710,35 +743,45 @@ When the user asks about this project, answer based on the repository context ab
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Google Gemini</SelectLabel>
                 {GEMINI_MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    <ModelStatusRow name={m.name} status={modelStatuses[m.id]} />
+                  </SelectItem>
                 ))}
               </SelectGroup>
               <SelectSeparator />
               <SelectGroup>
-                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">OpenRouter (19 Free Models)</SelectLabel>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">OpenRouter (Free Models)</SelectLabel>
                 {OPENROUTER_MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    <ModelStatusRow name={m.name} status={modelStatuses[m.id]} />
+                  </SelectItem>
                 ))}
               </SelectGroup>
               <SelectSeparator />
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Anthropic (Claude)</SelectLabel>
                 {ANTHROPIC_MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    <ModelStatusRow name={m.name} status={modelStatuses[m.id]} />
+                  </SelectItem>
                 ))}
               </SelectGroup>
               <SelectSeparator />
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Models</SelectLabel>
                 {githubModels.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    <ModelStatusRow name={m.name} status={modelStatuses[m.id]} />
+                  </SelectItem>
                 ))}
               </SelectGroup>
               <SelectSeparator />
               <SelectGroup>
                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">GitHub Copilot</SelectLabel>
                 {COPILOT_MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    <ModelStatusRow name={m.name} status={modelStatuses[m.id]} />
+                  </SelectItem>
                 ))}
               </SelectGroup>
               {ollamaModels.length > 0 && (
@@ -747,7 +790,9 @@ When the user asks about this project, answer based on the repository context ab
                   <SelectGroup>
                     <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Local (Ollama)</SelectLabel>
                     {ollamaModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      <SelectItem key={m.id} value={m.id}>
+                        <ModelStatusRow name={m.name} status={modelStatuses[m.id]} />
+                      </SelectItem>
                     ))}
                   </SelectGroup>
                 </>
