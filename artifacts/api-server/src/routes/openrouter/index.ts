@@ -417,7 +417,19 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       if (!anthropicResponse.ok) {
         const raw = await anthropicResponse.text().catch(() => "");
         console.error(`[anthropic] model=${modelName} HTTP ${anthropicResponse.status}: ${raw}`);
-        return res.status(502).json({ error: `Anthropic ${anthropicResponse.status}: ${raw.slice(0, 300)}` });
+        let hint = "";
+        if (anthropicResponse.status === 400 && raw.includes("credit")) {
+          hint = " Your Anthropic credit balance is too low — top up at console.anthropic.com/settings/billing, or switch to a free OpenRouter or GitHub model.";
+        }
+        const errMsg = `⚠️ Anthropic error (${anthropicResponse.status}).${hint}`;
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.write(`data: ${JSON.stringify({ content: errMsg })}\n\n`);
+        await db.insert(messagesTable).values({ conversationId, role: "assistant", content: errMsg }).catch(() => {});
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+        return;
       }
 
       if (!anthropicResponse.body) {
@@ -642,7 +654,6 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     }
 
     // ── OpenRouter branch ──
-    // Always use openrouter.ai directly — env var may point to a different service
     const orBaseUrl = "https://openrouter.ai/api/v1";
     const orApiKey = process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER || process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || "";
 
@@ -652,40 +663,76 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       });
     }
 
-    // ── Direct fetch to OpenRouter (bypasses SDK to expose raw HTTP status) ──
-    const orResponse = await fetch(`${orBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${orApiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://aai.app",
-        "X-Title": "AAI Chat",
-      },
-      body: JSON.stringify({
-        model: modelName,
-        max_tokens: 4096,
-        messages: messagesWithSystem,
-        stream: true,
-      }),
-    });
+    // Fallback free models to try when the primary is rate-limited (429)
+    const OR_FALLBACK_MODELS = [
+      "google/gemma-3-27b-it:free",
+      "deepseek/deepseek-r1:free",
+      "qwen/qwq-32b:free",
+      "microsoft/phi-4-reasoning:free",
+      "meta-llama/llama-3.1-8b-instruct:free",
+      "mistralai/mistral-7b-instruct:free",
+    ];
 
-    if (!orResponse.ok) {
-      const rawBody = await orResponse.text().catch(() => "");
-      let errMsg = `OpenRouter ${orResponse.status}`;
-      try {
-        const j = JSON.parse(rawBody) as any;
-        const detail = j?.error?.message ?? j?.error ?? j?.message;
-        if (detail) errMsg += `: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`;
-        else if (rawBody) errMsg += `: ${rawBody.slice(0, 300)}`;
-      } catch {
-        if (rawBody) errMsg += `: ${rawBody.slice(0, 300)}`;
+    const modelsToTry = [modelName, ...OR_FALLBACK_MODELS.filter((m) => m !== modelName)].slice(0, 5);
+
+    let orResponse: Response | null = null;
+    let usedModel = modelName;
+
+    for (const tryModel of modelsToTry) {
+      const attempt = await fetch(`${orBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${orApiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://aai.app",
+          "X-Title": "AAI Chat",
+        },
+        body: JSON.stringify({ model: tryModel, max_tokens: 4096, messages: messagesWithSystem, stream: true }),
+      });
+
+      if (attempt.status === 429) {
+        console.warn(`[openrouter] ${tryModel} rate-limited (429), trying fallback...`);
+        await attempt.body?.cancel().catch(() => {});
+        continue;
       }
-      console.error(`[openrouter] model=${modelName} HTTP ${orResponse.status}: ${rawBody}`);
-      return res.status(502).json({ error: errMsg });
+
+      orResponse = attempt;
+      usedModel = tryModel;
+      break;
+    }
+
+    // Helper: stream an error as an inline assistant message
+    const streamInlineError = async (msg: string) => {
+      if (!res.headersSent) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+      }
+      res.write(`data: ${JSON.stringify({ content: msg })}\n\n`);
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: msg }).catch(() => {});
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    };
+
+    if (!orResponse || !orResponse.ok) {
+      const status = orResponse?.status ?? 429;
+      const rawBody = orResponse ? await orResponse.text().catch(() => "") : "";
+      console.error(`[openrouter] model=${usedModel} HTTP ${status}: ${rawBody}`);
+      const allRateLimited = !orResponse || status === 429;
+      const errMsg = allRateLimited
+        ? `⚠️ All free OpenRouter models are currently rate-limited. Please switch to a **GitHub model** (e.g. GPT-4o) using the model selector at the top — those use your GitHub token and have no rate limits.`
+        : `⚠️ OpenRouter error (${status}): ${rawBody.slice(0, 200)}`;
+      await streamInlineError(errMsg);
+      return;
     }
 
     if (!orResponse.body) {
-      return res.status(502).json({ error: "OpenRouter returned an empty response body" });
+      await streamInlineError("⚠️ OpenRouter returned an empty response. Please try again.");
+      return;
+    }
+
+    if (usedModel !== modelName) {
+      console.info(`[openrouter] fell back from ${modelName} to ${usedModel}`);
     }
 
     // ── Stream response to client ──
@@ -726,18 +773,13 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       reader.releaseLock();
     }
 
-    await db.insert(messagesTable).values({
-      conversationId,
-      role: "assistant",
-      content: fullResponse,
-    });
-
+    await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
     return;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[openrouter] model=${modelName} error:`, err);
+    console.error(`[openrouter] error:`, err);
     if (!res.headersSent) {
       return res.status(500).json({ error: errMsg });
     }
