@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { openrouter } from "@workspace/integrations-openrouter-ai";
+import { ai as geminiAI } from "@workspace/integrations-gemini-ai";
 import {
   CreateOpenrouterConversationBody,
   SendOpenrouterMessageBody,
@@ -266,6 +267,7 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
   const isAnthropic = modelKey.startsWith("claude:");
   const isGitHub = modelKey.startsWith("github:");
   const isCopilot = modelKey.startsWith("copilot:");
+  const isGemini = modelKey.startsWith("gemini:");
   const modelName = isOllama
     ? modelKey.slice("ollama:".length)
     : isAnthropic
@@ -274,7 +276,9 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
         ? modelKey.slice("github:".length)
         : isCopilot
           ? modelKey.slice("copilot:".length)
-          : (MODELS[modelKey] ?? DEFAULT_MODEL);
+          : isGemini
+            ? modelKey.slice("gemini:".length)
+            : (MODELS[modelKey] ?? DEFAULT_MODEL);
   const systemPrompt = (req.body as any).systemPrompt as string | undefined;
 
   try {
@@ -659,6 +663,62 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       }
 
       try { await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse }); } catch {}
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // ── Gemini branch (via Replit AI Integrations proxy — no API key needed) ──
+    if (isGemini) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      // Build Gemini-format message list (system as first user turn, "assistant" → "model")
+      const geminiContents = messagesWithSystem
+        .filter((m: any) => m.role !== "system")
+        .map((m: any) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: Array.isArray(m.content)
+            ? m.content.map((p: any) =>
+                p.type === "image_url"
+                  ? { inlineData: { mimeType: "image/jpeg", data: p.image_url.url.replace(/^data:[^;]+;base64,/, "") } }
+                  : { text: p.text ?? "" }
+              )
+            : [{ text: typeof m.content === "string" ? m.content : "" }],
+        }));
+
+      // Prepend system as first user message if present
+      const systemMsg = messagesWithSystem.find((m: any) => m.role === "system");
+      if (systemMsg) {
+        geminiContents.unshift({ role: "user", parts: [{ text: systemMsg.content as string }] });
+        geminiContents.splice(1, 0, { role: "model", parts: [{ text: "Understood." }] });
+      }
+
+      let fullResponse = "";
+      try {
+        const stream = await geminiAI.models.generateContentStream({
+          model: modelName,
+          contents: geminiContents,
+          config: { maxOutputTokens: 8192 },
+        });
+        for await (const chunk of stream) {
+          const text = chunk.text;
+          if (text) {
+            fullResponse += text;
+            res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+          }
+        }
+      } catch (err: any) {
+        const msg = `⚠️ Gemini error: ${err?.message ?? String(err)}`;
+        res.write(`data: ${JSON.stringify({ content: msg })}\n\n`);
+        await db.insert(messagesTable).values({ conversationId, role: "assistant", content: msg }).catch(() => {});
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+        return;
+      }
+
+      await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse }).catch(() => {});
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
       return;

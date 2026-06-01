@@ -76,6 +76,13 @@ const OPENROUTER_MODELS = [
   { id: "glm",             name: "GLM 4.5 Air" },
 ];
 
+const GEMINI_MODELS = [
+  { id: "gemini:gemini-2.5-pro",   name: "Gemini 2.5 Pro" },
+  { id: "gemini:gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  { id: "gemini:gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
+  { id: "gemini:gemini-3-flash-preview",  name: "Gemini 3 Flash" },
+];
+
 const ANTHROPIC_MODELS = [
   { id: "claude:claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
   { id: "claude:claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
@@ -702,7 +709,14 @@ When the user asks about this project, answer based on the repository context ab
             </SelectTrigger>
             <SelectContent className="max-h-[60vh] overflow-y-auto">
               <SelectGroup>
-                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Cloud (OpenRouter)</SelectLabel>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">Google Gemini</SelectLabel>
+                {GEMINI_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">OpenRouter (19 Free Models)</SelectLabel>
                 {OPENROUTER_MODELS.map((m) => (
                   <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                 ))}

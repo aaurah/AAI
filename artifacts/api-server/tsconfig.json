@@ -17,6 +17,9 @@
     },
     {
       "path": "../../lib/integrations-openrouter-ai"
+    },
+    {
+      "path": "../../lib/integrations-gemini-ai"
     }
   ]
 }
