@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
 import { users } from "@workspace/db/schema";
+import { openrouter } from "@workspace/integrations-openrouter-ai";
 import {
   CreateOpenrouterConversationBody,
   SendOpenrouterMessageBody,
@@ -653,53 +654,18 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       return;
     }
 
-    // ── OpenRouter branch ──
-    const orBaseUrl = "https://openrouter.ai/api/v1";
-    const orApiKey = process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER || process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || "";
-
-    if (!orApiKey) {
-      return res.status(500).json({
-        error: "OpenRouter is not configured. Set OPENROUTER_API_KEY in Replit Secrets (get a free key at openrouter.ai).",
-      });
-    }
-
+    // ── OpenRouter branch (via Replit AI Integrations proxy — no API key needed) ──
     // Fallback free models to try when the primary is rate-limited (429)
     const OR_FALLBACK_MODELS = [
+      "meta-llama/llama-3.3-70b-instruct:free",
       "google/gemma-3-27b-it:free",
       "deepseek/deepseek-r1:free",
-      "qwen/qwq-32b:free",
-      "microsoft/phi-4-reasoning:free",
-      "meta-llama/llama-3.1-8b-instruct:free",
+      "qwen/qwen3-coder:free",
+      "meta-llama/llama-3.2-3b-instruct:free",
       "mistralai/mistral-7b-instruct:free",
     ];
 
-    const modelsToTry = [modelName, ...OR_FALLBACK_MODELS.filter((m) => m !== modelName)].slice(0, 5);
-
-    let orResponse: Response | null = null;
-    let usedModel = modelName;
-
-    for (const tryModel of modelsToTry) {
-      const attempt = await fetch(`${orBaseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${orApiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://aai.app",
-          "X-Title": "AAI Chat",
-        },
-        body: JSON.stringify({ model: tryModel, max_tokens: 4096, messages: messagesWithSystem, stream: true }),
-      });
-
-      if (attempt.status === 429) {
-        console.warn(`[openrouter] ${tryModel} rate-limited (429), trying fallback...`);
-        await attempt.body?.cancel().catch(() => {});
-        continue;
-      }
-
-      orResponse = attempt;
-      usedModel = tryModel;
-      break;
-    }
+    const modelsToTry = [modelName, ...OR_FALLBACK_MODELS.filter((m) => m !== modelName)].slice(0, 6);
 
     // Helper: stream an error as an inline assistant message
     const streamInlineError = async (msg: string) => {
@@ -714,20 +680,36 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
       res.end();
     };
 
-    if (!orResponse || !orResponse.ok) {
-      const status = orResponse?.status ?? 429;
-      const rawBody = orResponse ? await orResponse.text().catch(() => "") : "";
-      console.error(`[openrouter] model=${usedModel} HTTP ${status}: ${rawBody}`);
-      const allRateLimited = !orResponse || status === 429;
-      const errMsg = allRateLimited
-        ? `⚠️ All free OpenRouter models are currently rate-limited. Please switch to a **GitHub model** (e.g. GPT-4o) using the model selector at the top — those use your GitHub token and have no rate limits.`
-        : `⚠️ OpenRouter error (${status}): ${rawBody.slice(0, 200)}`;
-      await streamInlineError(errMsg);
-      return;
+    let stream: AsyncIterable<any> | null = null;
+    let usedModel = modelName;
+
+    for (const tryModel of modelsToTry) {
+      try {
+        const attempt = await openrouter.chat.completions.create({
+          model: tryModel,
+          max_tokens: 8192,
+          messages: messagesWithSystem as any,
+          stream: true,
+        });
+        stream = attempt;
+        usedModel = tryModel;
+        break;
+      } catch (err: any) {
+        const status = err?.status ?? err?.statusCode ?? 0;
+        if (status === 429) {
+          console.warn(`[openrouter] ${tryModel} rate-limited (429), trying fallback...`);
+          continue;
+        }
+        console.error(`[openrouter] model=${tryModel} error:`, err?.message ?? err);
+        await streamInlineError(`⚠️ OpenRouter error: ${err?.message ?? String(err)}`);
+        return;
+      }
     }
 
-    if (!orResponse.body) {
-      await streamInlineError("⚠️ OpenRouter returned an empty response. Please try again.");
+    if (!stream) {
+      await streamInlineError(
+        "⚠️ All free OpenRouter models are currently rate-limited. Try again in a moment, or switch to a **GitHub model** (e.g. GPT-4o) using the model selector at the top."
+      );
       return;
     }
 
@@ -740,37 +722,14 @@ router.post("/openrouter/conversations/:id/messages", async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    const reader = (orResponse.body as any).getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
     let fullResponse = "";
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read() as { done: boolean; value?: Uint8Array };
-        if (done) break;
-        if (!value) continue;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const d = line.slice(6).trim();
-          if (!d || d === "[DONE]") continue;
-          try {
-            const chunk = JSON.parse(d) as { choices?: { delta?: { content?: string } }[] };
-            const c = chunk.choices?.[0]?.delta?.content;
-            if (c) {
-              fullResponse += c;
-              res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
-            }
-          } catch {
-            // skip malformed SSE line
-          }
-        }
+    for await (const chunk of stream) {
+      const c = chunk.choices?.[0]?.delta?.content;
+      if (c) {
+        fullResponse += c;
+        res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
       }
-    } finally {
-      reader.releaseLock();
     }
 
     await db.insert(messagesTable).values({ conversationId, role: "assistant", content: fullResponse });
