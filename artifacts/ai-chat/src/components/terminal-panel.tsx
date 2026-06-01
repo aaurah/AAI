@@ -200,6 +200,16 @@ export function TerminalPanel() {
     }
   }, [push]);
 
+  // Listen for commands dispatched from other panels (e.g. Clone from GitHub panel)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const cmd = (e as CustomEvent<{ command: string }>).detail?.command;
+      if (cmd) runCommand(cmd);
+    };
+    window.addEventListener("terminal-run-command", handler);
+    return () => window.removeEventListener("terminal-run-command", handler);
+  }, [runCommand]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !running) {
       runCommand(input);

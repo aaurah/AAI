@@ -6,8 +6,9 @@ import {
   Github, Search, ChevronLeft, Lock, Globe, File, Loader2,
   X, KeyRound, ExternalLink, Copy, CheckCircle2, FolderOpen,
   MessageSquare, GitPullRequest, GitCommit, RefreshCw, Plus,
-  Trash2, Eye, EyeOff, GitBranch, Upload, Download, Diff,
-  ChevronDown, AlertCircle, Check,
+  Trash2, GitBranch, Upload, Download, Diff,
+  ChevronDown, AlertCircle, Check, History, Terminal,
+  FilePlus, GitMerge, Pencil, ChevronRight,
 } from "lucide-react";
 
 interface CodePanelProps {
@@ -24,6 +25,9 @@ interface Repo {
   language: string | null;
   updated_at: string;
   default_branch: string;
+  description?: string | null;
+  stargazers_count?: number;
+  forks_count?: number;
 }
 
 interface FileNode {
@@ -33,7 +37,29 @@ interface FileNode {
   size?: number;
 }
 
+interface CommitEntry {
+  sha: string;
+  commit: {
+    message: string;
+    author: { name: string; date: string };
+  };
+  author: { login: string; avatar_url: string } | null;
+  html_url: string;
+}
+
+interface PullRequest {
+  number: number;
+  title: string;
+  state: string;
+  html_url: string;
+  head: { ref: string };
+  base: { ref: string };
+  user: { login: string };
+  created_at: string;
+}
+
 type AuthMethod = "pat" | "oauth";
+type RepoView = "files" | "commits" | "prs";
 
 const GH_TOKEN_KEY = "github_token";
 const GH_CLIENT_ID_KEY = "github_client_id";
@@ -50,6 +76,17 @@ async function ghFetch(url: string, token: string) {
     throw new Error(msg || `GitHub error ${res.status}`);
   }
   return res.json();
+}
+
+async function ghPost(url: string, token: string, body: object) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (!res.ok) throw new Error((data.message as string) || `GitHub error ${res.status}`);
+  return data;
 }
 
 async function ghPut(url: string, token: string, body: object) {
@@ -81,6 +118,18 @@ function fromBase64(b64: string): string {
   return decodeURIComponent(escape(atob(b64.replace(/\n/g, ""))));
 }
 
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
 // ── Simple unified diff ───────────────────────────────────────────────────────
 interface DiffLine { type: "add" | "del" | "ctx"; text: string; }
 
@@ -88,13 +137,11 @@ function computeDiff(original: string, edited: string): DiffLine[] {
   if (original === edited) return [];
   const a = original.split("\n");
   const b = edited.split("\n");
-  // LCS-based diff (simple O(n²) — good enough for files < 2000 lines)
   const m = a.length, n = b.length;
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--)
     for (let j = n - 1; j >= 0; j--)
       dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-
   const lines: DiffLine[] = [];
   let i = 0, j = 0;
   while (i < m || j < n) {
@@ -123,7 +170,9 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
   const [gitUser, setGitUser] = useState<string>("");
 
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+  const [repoView, setRepoView] = useState<RepoView>("files");
   const [files, setFiles] = useState<FileNode[]>([]);
+  const [fileSearch, setFileSearch] = useState("");
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [loadingFileSha, setLoadingFileSha] = useState<string | null>(null);
@@ -135,12 +184,30 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
   const [branches, setBranches] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState("HEAD");
   const [showBranchPicker, setShowBranchPicker] = useState(false);
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+
+  // Commit history state
+  const [commits, setCommits] = useState<CommitEntry[]>([]);
+  const [isLoadingCommits, setIsLoadingCommits] = useState(false);
+
+  // PR state
+  const [prs, setPrs] = useState<PullRequest[]>([]);
+  const [isLoadingPrs, setIsLoadingPrs] = useState(false);
+  const [creatingPr, setCreatingPr] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
+  const [prBase, setPrBase] = useState("");
+  const [isSubmittingPr, setIsSubmittingPr] = useState(false);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [prSuccess, setPrSuccess] = useState<string | null>(null);
 
   // Editor state
   const [editingFile, setEditingFile] = useState<FileNode | null>(null);
   const [editContent, setEditContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
-  const [fileSha, setFileSha] = useState(""); // latest sha from GitHub
+  const [fileSha, setFileSha] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -151,9 +218,17 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
   const [creatingFile, setCreatingFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
 
+  // Rename state
+  const [renamingFile, setRenamingFile] = useState<FileNode | null>(null);
+  const [renameTarget, setRenameTarget] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+
   // Delete state
   const [deletingFile, setDeletingFile] = useState<FileNode | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Clone to terminal
+  const [isCloning, setIsCloning] = useState(false);
 
   useEffect(() => { if (token) fetchRepos(token); }, [token]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
@@ -177,6 +252,24 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
       setCurrentBranch(repo.default_branch || "main");
     } catch {}
   };
+
+  const fetchCommits = useCallback(async (repo: Repo, branch: string) => {
+    setIsLoadingCommits(true);
+    try {
+      const data = await ghFetch(`https://api.github.com/repos/${repo.full_name}/commits?sha=${branch}&per_page=30`, token) as CommitEntry[];
+      setCommits(data);
+    } catch { setCommits([]); }
+    finally { setIsLoadingCommits(false); }
+  }, [token]);
+
+  const fetchPrs = useCallback(async (repo: Repo) => {
+    setIsLoadingPrs(true);
+    try {
+      const data = await ghFetch(`https://api.github.com/repos/${repo.full_name}/pulls?state=open&per_page=30`, token) as PullRequest[];
+      setPrs(data);
+    } catch { setPrs([]); }
+    finally { setIsLoadingPrs(false); }
+  }, [token]);
 
   const loadFiles = useCallback(async (repo: Repo, branch?: string) => {
     const ref = branch || currentBranch;
@@ -253,7 +346,9 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
   };
 
   const handleSelectRepo = async (repo: Repo) => {
-    setSelectedRepo(repo); setFiles([]); setFileError(null); setEditingFile(null); setCurrentBranch(repo.default_branch || "main");
+    setSelectedRepo(repo); setFiles([]); setFileError(null); setEditingFile(null);
+    setCurrentBranch(repo.default_branch || "main"); setRepoView("files");
+    setFileSearch(""); setCommits([]); setPrs([]);
     fetchBranches(repo);
     setIsLoadingFiles(true);
     try {
@@ -264,8 +359,9 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
   };
 
   const handleSwitchBranch = async (branch: string) => {
-    setCurrentBranch(branch); setShowBranchPicker(false); setEditingFile(null);
+    setCurrentBranch(branch); setShowBranchPicker(false); setEditingFile(null); setFileSearch("");
     await loadFiles(selectedRepo!, branch);
+    if (repoView === "commits") fetchCommits(selectedRepo!, branch);
   };
 
   const handlePull = async () => {
@@ -275,6 +371,50 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
       if (editingFile) await openEditor(editingFile);
       setPullSuccess(true); setTimeout(() => setPullSuccess(false), 2000);
     } finally { setIsPulling(false); }
+  };
+
+  const handleCreateBranch = async () => {
+    if (!newBranchName.trim() || !selectedRepo) return;
+    setIsCreatingBranch(true); setFileError(null);
+    try {
+      const ref = await ghFetch(`https://api.github.com/repos/${selectedRepo.full_name}/git/ref/heads/${currentBranch}`, token) as { object: { sha: string } };
+      await ghPost(`https://api.github.com/repos/${selectedRepo.full_name}/git/refs`, token, {
+        ref: `refs/heads/${newBranchName.trim()}`,
+        sha: ref.object.sha,
+      });
+      await fetchBranches(selectedRepo);
+      await handleSwitchBranch(newBranchName.trim());
+      setCreatingBranch(false); setNewBranchName("");
+    } catch (err: unknown) { setFileError(err instanceof Error ? err.message : "Failed to create branch"); }
+    finally { setIsCreatingBranch(false); }
+  };
+
+  const handleCreatePr = async () => {
+    if (!prTitle.trim() || !selectedRepo) return;
+    setIsSubmittingPr(true); setPrError(null); setPrSuccess(null);
+    try {
+      const base = prBase || selectedRepo.default_branch;
+      const data = await ghPost(`https://api.github.com/repos/${selectedRepo.full_name}/pulls`, token, {
+        title: prTitle.trim(),
+        body: prBody.trim(),
+        head: currentBranch,
+        base,
+      }) as { html_url: string; number: number };
+      setPrSuccess(`PR #${data.number} created!`);
+      setPrTitle(""); setPrBody(""); setCreatingPr(false);
+      fetchPrs(selectedRepo);
+      setTimeout(() => setPrSuccess(null), 4000);
+    } catch (err: unknown) { setPrError(err instanceof Error ? err.message : "Failed to create PR"); }
+    finally { setIsSubmittingPr(false); }
+  };
+
+  const handleCloneToTerminal = () => {
+    if (!selectedRepo) return;
+    setIsCloning(true);
+    const cmd = `git clone https://github.com/${selectedRepo.full_name}.git`;
+    window.dispatchEvent(new CustomEvent("terminal-run-command", { detail: { command: cmd } }));
+    window.dispatchEvent(new CustomEvent("switch-to-terminal"));
+    setTimeout(() => setIsCloning(false), 1500);
   };
 
   const openEditor = async (file: FileNode) => {
@@ -307,7 +447,6 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
       setOriginalContent(editContent);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-      // Refresh file tree to update SHAs
       loadFiles(selectedRepo, currentBranch);
     } catch (err: unknown) { setSaveError(err instanceof Error ? err.message : "Commit failed"); }
     finally { setIsSaving(false); }
@@ -346,8 +485,38 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
     finally { setIsDeleting(false); }
   };
 
+  const handleRenameFile = async () => {
+    if (!renamingFile || !renameTarget.trim() || !selectedRepo) return;
+    setIsRenaming(true); setSaveError(null);
+    try {
+      const branch = currentBranch === "HEAD" ? selectedRepo.default_branch : currentBranch;
+      // Read original
+      const data = await ghFetch(`https://api.github.com/repos/${selectedRepo.full_name}/contents/${encodeURIComponent(renamingFile.path)}?ref=${branch}`, token) as { sha: string; content: string; encoding: string };
+      const content = data.encoding === "base64" ? data.content : toBase64(data.content);
+      // Create at new path
+      await ghPut(
+        `https://api.github.com/repos/${selectedRepo.full_name}/contents/${encodeURIComponent(renameTarget.trim())}`,
+        token,
+        { message: `Rename ${renamingFile.path} → ${renameTarget.trim()}`, content: content.replace(/\n/g, ""), branch },
+      );
+      // Delete old path
+      await ghDelete(
+        `https://api.github.com/repos/${selectedRepo.full_name}/contents/${encodeURIComponent(renamingFile.path)}`,
+        token,
+        { message: `Delete ${renamingFile.path} (renamed)`, sha: renamingFile.sha, branch },
+      );
+      setRenamingFile(null); setRenameTarget("");
+      if (editingFile?.path === renamingFile.path) setEditingFile(null);
+      await loadFiles(selectedRepo, currentBranch);
+    } catch (err: unknown) { setSaveError(err instanceof Error ? err.message : "Failed to rename file"); }
+    finally { setIsRenaming(false); }
+  };
+
   const isDirty = editContent !== originalContent;
   const diffLines = showDiff ? computeDiff(originalContent, editContent) : [];
+  const filteredFiles = fileSearch
+    ? files.filter(f => f.path.toLowerCase().includes(fileSearch.toLowerCase()))
+    : files;
 
   // ── Auth view ───────────────────────────────────────────────────────────────
   if (!token) {
@@ -416,7 +585,6 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
   if (editingFile) {
     return (
       <div className="flex flex-col h-full overflow-hidden" data-testid="code-panel-editor">
-        {/* Editor header */}
         <div className="px-3 py-1.5 border-b border-sidebar-border shrink-0 space-y-1">
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" className="h-6 px-1 text-[10px] text-muted-foreground -ml-1 gap-0.5"
@@ -436,23 +604,27 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
         )}
         {saveSuccess && (
           <div className="mx-3 mt-1.5 p-2 text-[10px] bg-green-500/10 text-green-400 rounded border border-green-500/20 flex items-center gap-1.5 shrink-0">
-            <Check className="h-3 w-3" />Committed successfully
+            <Check className="h-3 w-3" />Committed & pushed successfully
           </div>
         )}
 
-        {/* Diff toggle */}
         <div className="flex items-center gap-1 px-3 py-1 border-b border-sidebar-border/50 shrink-0">
           <button
             onClick={() => setShowDiff(d => !d)}
             className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-colors ${showDiff ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}
           >
-            <Diff className="h-3 w-3" />{showDiff ? "Diff" : "Diff"}
+            <Diff className="h-3 w-3" /> Diff
+          </button>
+          <button
+            onClick={() => { onLoadFile(editingFile.path, editContent); }}
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <MessageSquare className="h-3 w-3" /> Send to AI
           </button>
           <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">{editContent.split("\n").length} lines</span>
         </div>
 
         {showDiff ? (
-          /* Diff view */
           <ScrollArea className="flex-1 min-h-0">
             {diffLines.length === 0 ? (
               <div className="py-8 text-center text-[10px] text-muted-foreground">No changes</div>
@@ -474,7 +646,6 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
             )}
           </ScrollArea>
         ) : (
-          /* Edit view */
           <textarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
@@ -486,7 +657,6 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           />
         )}
 
-        {/* Commit bar */}
         <div className="border-t border-sidebar-border/50 p-2 space-y-2 shrink-0 glass">
           <Input
             value={commitMessage}
@@ -504,7 +674,7 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
               onClick={handleCommit}
               data-testid="commit-btn"
             >
-              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitCommit className="h-3 w-3" />}
+              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
               {isSaving ? "Pushing…" : "Commit & Push"}
             </Button>
             <Button
@@ -526,28 +696,33 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
               </Button>
             )}
           </div>
-          <p className="text-[9px] text-muted-foreground/50 text-center">Commits directly to <span className="font-mono">{currentBranch}</span></p>
+          <p className="text-[9px] text-muted-foreground/50 text-center">Commits to <span className="font-mono">{currentBranch}</span></p>
         </div>
       </div>
     );
   }
 
-  // ── File browser view ────────────────────────────────────────────────────────
+  // ── Repo selected — file browser / commits / PRs ─────────────────────────────
   if (selectedRepo) {
     return (
       <div className="flex flex-col h-full overflow-hidden" data-testid="code-panel-file-browser">
         {/* Repo header */}
         <div className="px-3 py-1.5 border-b border-sidebar-border shrink-0">
-          <div className="flex items-center gap-1 mb-1">
+          <div className="flex items-center gap-1 mb-1.5">
             <Button variant="ghost" size="sm" className="h-6 px-1 text-[10px] text-muted-foreground -ml-1 gap-0.5"
-              onClick={() => { setSelectedRepo(null); setFiles([]); setFileError(null); setBranches([]); }} data-testid="back-to-repos-btn">
+              onClick={() => { setSelectedRepo(null); setFiles([]); setFileError(null); setBranches([]); setCommits([]); setPrs([]); }} data-testid="back-to-repos-btn">
               <ChevronLeft className="h-3 w-3" /> Repos
             </Button>
             <span className="text-[10px] font-semibold truncate flex-1">{selectedRepo.name}</span>
+            <a href={`https://github.com/${selectedRepo.full_name}`} target="_blank" rel="noreferrer"
+              className="p-1 rounded hover:bg-sidebar-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+              title="Open on GitHub">
+              <ExternalLink className="h-3 w-3" />
+            </a>
           </div>
 
-          {/* Branch picker + actions */}
-          <div className="flex items-center gap-1">
+          {/* Branch picker */}
+          <div className="flex items-center gap-1 mb-1.5">
             <div className="relative flex-1">
               <button
                 onClick={() => setShowBranchPicker(b => !b)}
@@ -565,7 +740,7 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
                       <button
                         key={b}
                         onClick={() => handleSwitchBranch(b)}
-                        className={`flex items-center gap-2 w-full px-2 py-1 text-[10px] hover:bg-sidebar-accent/50 ${b === currentBranch ? "text-primary font-medium" : "text-muted-foreground"}`}
+                        className={`flex items-center gap-2 w-full px-2 py-1.5 text-[10px] hover:bg-sidebar-accent/50 ${b === currentBranch ? "text-primary font-medium" : "text-muted-foreground"}`}
                       >
                         {b === currentBranch && <Check className="h-2.5 w-2.5 shrink-0" />}
                         <span className="truncate">{b}</span>
@@ -575,20 +750,68 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
                 </div>
               )}
             </div>
-
-            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" title="Pull / Refresh" onClick={handlePull} disabled={isPulling} data-testid="refresh-btn">
+            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" title="Refresh" onClick={handlePull} disabled={isPulling} data-testid="refresh-btn">
               {isPulling ? <Loader2 className="h-3 w-3 animate-spin" /> :
                pullSuccess ? <Check className="h-3 w-3 text-green-400" /> :
                <RefreshCw className="h-3 w-3" />}
             </Button>
-            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" title="New file" onClick={() => setCreatingFile(c => !c)} data-testid="new-file-btn">
-              <Plus className="h-3 w-3" />
-            </Button>
           </div>
 
-          {/* New file input */}
+          {/* Action buttons row */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => { setCreatingBranch(c => !c); setNewBranchName(""); }}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors"
+              title="Create branch"
+            >
+              <GitBranch className="h-3 w-3" /> Branch
+            </button>
+            <button
+              onClick={() => { setCreatingFile(c => !c); setNewFilePath(""); }}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors"
+              title="New file"
+              data-testid="new-file-btn"
+            >
+              <FilePlus className="h-3 w-3" /> File
+            </button>
+            <button
+              onClick={() => { setCreatingPr(true); setPrBase(selectedRepo.default_branch); setPrTitle(`Merge ${currentBranch}`); }}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors"
+              title="Open Pull Request"
+            >
+              <GitPullRequest className="h-3 w-3" /> PR
+            </button>
+            <button
+              onClick={handleCloneToTerminal}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors ml-auto"
+              title="Clone repo in terminal"
+              disabled={isCloning}
+            >
+              {isCloning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Terminal className="h-3 w-3" />}
+              Clone
+            </button>
+          </div>
+
+          {/* Create branch input */}
+          {creatingBranch && (
+            <div className="flex gap-1 mt-1.5">
+              <Input
+                autoFocus
+                value={newBranchName}
+                onChange={e => setNewBranchName(e.target.value)}
+                placeholder={`from ${currentBranch}…`}
+                className="h-6 text-[10px] font-mono flex-1 bg-background/50"
+                onKeyDown={e => { if (e.key === "Enter") handleCreateBranch(); if (e.key === "Escape") { setCreatingBranch(false); setNewBranchName(""); } }}
+              />
+              <Button size="sm" className="h-6 px-2 text-[10px]" onClick={handleCreateBranch} disabled={!newBranchName.trim() || isCreatingBranch}>
+                {isCreatingBranch ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : "Create"}
+              </Button>
+            </div>
+          )}
+
+          {/* Create file input */}
           {creatingFile && (
-            <div className="flex gap-1 mt-1">
+            <div className="flex gap-1 mt-1.5">
               <Input
                 autoFocus
                 value={newFilePath}
@@ -605,13 +828,36 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           )}
         </div>
 
+        {/* Tab bar */}
+        <div className="flex border-b border-sidebar-border shrink-0">
+          {([["files", "Files", File], ["commits", "Commits", History], ["prs", "Pull Requests", GitMerge]] as [RepoView, string, React.FC<any>][]).map(([v, label, Icon]) => (
+            <button
+              key={v}
+              onClick={() => {
+                setRepoView(v);
+                if (v === "commits" && commits.length === 0) fetchCommits(selectedRepo, currentBranch);
+                if (v === "prs" && prs.length === 0) fetchPrs(selectedRepo);
+              }}
+              className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-medium transition-colors ${repoView === v ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <Icon className="h-3 w-3" />{label}
+            </button>
+          ))}
+        </div>
+
+        {/* Error / status */}
         {(fileError || saveError) && (
-          <div className="mx-2 mt-1.5 p-2 text-[10px] bg-destructive/10 text-destructive rounded border border-destructive/20 shrink-0">
-            {fileError || saveError}
+          <div className="mx-2 mt-1.5 p-2 text-[10px] bg-destructive/10 text-destructive rounded border border-destructive/20 flex items-start gap-1 shrink-0">
+            <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />{fileError || saveError}
+          </div>
+        )}
+        {prSuccess && (
+          <div className="mx-2 mt-1.5 p-2 text-[10px] bg-green-500/10 text-green-400 rounded border border-green-500/20 flex items-center gap-1 shrink-0">
+            <Check className="h-3 w-3" />{prSuccess}
           </div>
         )}
 
-        {/* Delete confirm dialog */}
+        {/* Delete confirm */}
         {deletingFile && (
           <div className="mx-2 mt-1.5 p-2 text-[10px] rounded border border-destructive/30 bg-destructive/5 shrink-0 space-y-2">
             <p>Delete <span className="font-mono text-destructive">{deletingFile.path}</span>?</p>
@@ -624,54 +870,212 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           </div>
         )}
 
-        <ScrollArea className="flex-1" onClick={() => setShowBranchPicker(false)}>
-          <div className="p-2 space-y-0.5">
-            {isLoadingFiles ? (
-              <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            ) : files.length === 0 ? (
-              <div className="py-8 text-center text-[10px] text-muted-foreground">No files found</div>
-            ) : (
-              files.map((file) => (
-                <div key={file.path} className="flex items-center justify-between group p-1.5 hover:bg-sidebar-accent/50 rounded-md" data-testid={`file-row-${file.sha}`}>
-                  <button
-                    className="flex items-center gap-1.5 overflow-hidden flex-1 text-left"
-                    onClick={() => openEditor(file)}
-                    disabled={loadingFileSha === file.sha}
-                    title={file.path}
-                  >
-                    {loadingFileSha === file.sha
-                      ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
-                      : <File className="h-3 w-3 text-muted-foreground shrink-0" />}
-                    <span className="truncate text-[10px] text-muted-foreground group-hover:text-foreground">{file.path}</span>
-                  </button>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button
-                      onClick={() => { onLoadFile(file.path, ""); openEditor(file); }}
-                      className="p-1 rounded hover:bg-sidebar-border text-muted-foreground hover:text-foreground"
-                      title="Load into chat"
-                    >
-                      <MessageSquare className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={() => setDeletingFile(file)}
-                      className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
-                      title="Delete file"
-                      data-testid={`delete-file-btn-${file.sha}`}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
+        {/* Rename input */}
+        {renamingFile && (
+          <div className="mx-2 mt-1.5 p-2 text-[10px] rounded border border-primary/20 bg-primary/5 shrink-0 space-y-1.5">
+            <p className="text-muted-foreground">Rename <span className="font-mono text-foreground">{renamingFile.path}</span></p>
+            <div className="flex gap-1">
+              <Input
+                autoFocus
+                value={renameTarget}
+                onChange={e => setRenameTarget(e.target.value)}
+                placeholder="new/path/name.ts"
+                className="h-6 text-[10px] font-mono flex-1"
+                onKeyDown={e => { if (e.key === "Enter") handleRenameFile(); if (e.key === "Escape") { setRenamingFile(null); setRenameTarget(""); } }}
+              />
+              <Button size="sm" className="h-6 px-2 text-[10px]" onClick={handleRenameFile} disabled={!renameTarget.trim() || isRenaming}>
+                {isRenaming ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : "Rename"}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => { setRenamingFile(null); setRenameTarget(""); }}>Cancel</Button>
+            </div>
           </div>
-        </ScrollArea>
+        )}
+
+        {/* PR creation form */}
+        {creatingPr && (
+          <div className="mx-2 mt-1.5 p-2 rounded border border-primary/20 bg-primary/5 shrink-0 space-y-1.5">
+            <p className="text-[10px] font-medium flex items-center gap-1"><GitPullRequest className="h-3 w-3 text-primary" /> New Pull Request</p>
+            <Input value={prTitle} onChange={e => setPrTitle(e.target.value)} placeholder="PR title…" className="h-6 text-[10px]" />
+            <textarea
+              value={prBody}
+              onChange={e => setPrBody(e.target.value)}
+              placeholder="Description (optional)…"
+              rows={2}
+              className="w-full text-[10px] font-sans bg-background/50 border border-border/50 rounded px-2 py-1 resize-none outline-none focus:border-primary/50 text-foreground"
+            />
+            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="font-mono text-primary">{currentBranch}</span>
+              <ChevronRight className="h-3 w-3" />
+              <select
+                value={prBase}
+                onChange={e => setPrBase(e.target.value)}
+                className="bg-background/50 border border-border/50 rounded px-1 py-0.5 text-[10px] text-foreground outline-none"
+              >
+                {branches.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            {prError && <p className="text-[10px] text-destructive">{prError}</p>}
+            <div className="flex gap-1">
+              <Button size="sm" className="h-6 text-[10px] flex-1 gap-1" onClick={handleCreatePr} disabled={!prTitle.trim() || isSubmittingPr || currentBranch === prBase}>
+                {isSubmittingPr ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <GitPullRequest className="h-3 w-3" />}
+                {isSubmittingPr ? "Creating…" : "Create PR"}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => { setCreatingPr(false); setPrError(null); }}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Files tab */}
+        {repoView === "files" && (
+          <>
+            <div className="px-2 pt-1.5 pb-1 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2 top-1.5 h-3 w-3 text-muted-foreground" />
+                <Input
+                  value={fileSearch}
+                  onChange={e => setFileSearch(e.target.value)}
+                  placeholder="Filter files…"
+                  className="h-6 text-[10px] pl-6 bg-background/50"
+                />
+                {fileSearch && <button onClick={() => setFileSearch("")} className="absolute right-1.5 top-1.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
+              </div>
+            </div>
+            <ScrollArea className="flex-1" onClick={() => setShowBranchPicker(false)}>
+              <div className="p-1 space-y-0.5">
+                {isLoadingFiles ? (
+                  <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                ) : filteredFiles.length === 0 ? (
+                  <div className="py-8 text-center text-[10px] text-muted-foreground">{fileSearch ? "No files match" : "No files found"}</div>
+                ) : (
+                  filteredFiles.map((file) => (
+                    <div key={file.path} className="flex items-center justify-between group p-1.5 hover:bg-sidebar-accent/50 rounded-md" data-testid={`file-row-${file.sha}`}>
+                      <button
+                        className="flex items-center gap-1.5 overflow-hidden flex-1 text-left"
+                        onClick={() => openEditor(file)}
+                        disabled={loadingFileSha === file.sha}
+                        title={file.path}
+                      >
+                        {loadingFileSha === file.sha
+                          ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+                          : <File className="h-3 w-3 text-muted-foreground shrink-0" />}
+                        <span className="truncate text-[10px] text-muted-foreground group-hover:text-foreground">{file.path}</span>
+                      </button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button
+                          onClick={() => { onLoadFile(file.path, ""); openEditor(file); }}
+                          className="p-1 rounded hover:bg-sidebar-border text-muted-foreground hover:text-foreground"
+                          title="Send to chat"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => { setRenamingFile(file); setRenameTarget(file.path); }}
+                          className="p-1 rounded hover:bg-sidebar-border text-muted-foreground hover:text-foreground"
+                          title="Rename file"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingFile(file)}
+                          className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                          title="Delete file"
+                          data-testid={`delete-file-btn-${file.sha}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </>
+        )}
+
+        {/* Commits tab */}
+        {repoView === "commits" && (
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-0.5">
+              {isLoadingCommits ? (
+                <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : commits.length === 0 ? (
+                <div className="py-8 text-center text-[10px] text-muted-foreground">No commits found</div>
+              ) : (
+                commits.map(commit => (
+                  <a
+                    key={commit.sha}
+                    href={commit.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-start gap-2 p-2 rounded-md hover:bg-sidebar-accent/50 transition-colors group"
+                  >
+                    {commit.author?.avatar_url ? (
+                      <img src={commit.author.avatar_url} alt="" className="h-5 w-5 rounded-full shrink-0 mt-0.5" />
+                    ) : (
+                      <div className="h-5 w-5 rounded-full bg-muted shrink-0 mt-0.5 flex items-center justify-center">
+                        <GitCommit className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-foreground/90 leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                        {commit.commit.message.split("\n")[0]}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5 font-mono">
+                        {commit.sha.slice(0, 7)} · {commit.commit.author.name} · {relativeTime(commit.commit.author.date)}
+                      </p>
+                    </div>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0 mt-1" />
+                  </a>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        )}
+
+        {/* PRs tab */}
+        {repoView === "prs" && (
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-1">
+              <button
+                onClick={() => { setCreatingPr(true); setPrBase(selectedRepo.default_branch); setPrTitle(`Merge ${currentBranch}`); setRepoView("files"); }}
+                className="w-full flex items-center gap-1.5 p-2 rounded-md border border-dashed border-primary/30 hover:bg-primary/5 text-[10px] text-primary/70 hover:text-primary transition-colors"
+              >
+                <Plus className="h-3 w-3" /> Open New Pull Request
+              </button>
+              {isLoadingPrs ? (
+                <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : prs.length === 0 ? (
+                <div className="py-6 text-center text-[10px] text-muted-foreground">No open pull requests</div>
+              ) : (
+                prs.map(pr => (
+                  <a
+                    key={pr.number}
+                    href={pr.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-start gap-2 p-2 rounded-md hover:bg-sidebar-accent/50 transition-colors group border border-transparent hover:border-sidebar-border"
+                  >
+                    <GitMerge className="h-3.5 w-3.5 text-green-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-foreground/90 leading-snug group-hover:text-primary transition-colors">{pr.title}</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">
+                        #{pr.number} · <span className="font-mono">{pr.head.ref}</span> → <span className="font-mono">{pr.base.ref}</span>
+                      </p>
+                      <p className="text-[9px] text-muted-foreground">{pr.user.login} · {relativeTime(pr.created_at)}</p>
+                    </div>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0 mt-1" />
+                  </a>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        )}
       </div>
     );
   }
 
   // ── Repo list view ──────────────────────────────────────────────────────────
-  const filteredRepos = repos.filter((r) => r.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredRepos = repos.filter((r) => r.name.toLowerCase().includes(searchQuery.toLowerCase()) || (r.description || "").toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="code-panel-connected">
@@ -680,9 +1084,14 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
           <Github className="h-4 w-4 text-primary shrink-0" />
           <span className="truncate text-xs">{gitUser || "Connected"}</span>
         </div>
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive shrink-0" onClick={handleDisconnect} data-testid="github-disconnect-btn">
-          Disconnect
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => fetchRepos(token)} title="Refresh repos">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive shrink-0" onClick={handleDisconnect} data-testid="github-disconnect-btn">
+            Disconnect
+          </Button>
+        </div>
       </div>
 
       {repoError && <div className="mx-3 mt-2 p-2 text-xs bg-destructive/10 text-destructive rounded-md border border-destructive/20 break-words shrink-0">{repoError}</div>}
@@ -690,7 +1099,7 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
       <div className="p-3 border-b border-sidebar-border shrink-0">
         <div className="relative">
           <Search className="absolute left-2 top-1.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search repos..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 bg-background/50" data-testid="repo-search-input" />
+          <Input placeholder="Search repos…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 bg-background/50" data-testid="repo-search-input" />
           {searchQuery && (
             <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
           )}
@@ -712,16 +1121,22 @@ export function CodePanel({ onLoadFile, onOpenRepoChat }: CodePanelProps) {
             filteredRepos.map((repo) => (
               <div key={repo.id} className="group relative rounded-md border border-transparent hover:border-sidebar-border hover:bg-sidebar-accent/50 transition-colors" data-testid={`repo-row-${repo.id}`}>
                 <button onClick={() => handleSelectRepo(repo)} disabled={openingRepoPk === repo.id} className="w-full text-left p-2.5 pr-16">
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
                     <div className="flex items-center gap-1.5 overflow-hidden">
                       <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
                       <span className="text-xs font-medium truncate group-hover:text-primary transition-colors">{repo.name}</span>
                     </div>
                     {repo.private ? <Lock className="h-3 w-3 text-muted-foreground shrink-0" /> : <Globe className="h-3 w-3 text-muted-foreground shrink-0" />}
                   </div>
+                  {repo.description && (
+                    <p className="text-[10px] text-muted-foreground/70 pl-5 truncate mb-0.5">{repo.description}</p>
+                  )}
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground pl-5">
                     {repo.language && <span className="px-1.5 py-0.5 rounded-sm bg-muted font-medium">{repo.language}</span>}
-                    <span>Updated {new Date(repo.updated_at).toLocaleDateString()}</span>
+                    {repo.stargazers_count !== undefined && repo.stargazers_count > 0 && (
+                      <span>★ {repo.stargazers_count}</span>
+                    )}
+                    <span>Updated {relativeTime(repo.updated_at)}</span>
                   </div>
                 </button>
                 <button
