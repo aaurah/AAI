@@ -6,6 +6,7 @@ import githubRouter from "./github";
 import authRouter from "./auth";
 import apiKeysRouter from "./apikeys";
 import adminRouter from "./admin";
+import terminalRouter from "./terminal";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(githubRouter);
 router.use(authRouter);
 router.use(apiKeysRouter);
 router.use(adminRouter);
+router.use(terminalRouter);
 
 export default router;

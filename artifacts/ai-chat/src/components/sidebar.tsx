@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useListOpenrouterConversations, useDeleteOpenrouterConversation, getListOpenrouterConversationsQueryKey } from "@workspace/api-client-react";
-import { Plus, MessageSquare, Trash2, Code2, Settings } from "lucide-react";
+import { Plus, MessageSquare, Trash2, Code2, Settings, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CodePanel } from "./code-panel";
+import { TerminalPanel } from "./terminal-panel";
 
 interface SidebarProps {
   activeId?: number;
@@ -133,7 +134,7 @@ function ConversationItem({
 }
 
 export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }: SidebarProps) {
-  const [activeTab, setActiveTab] = useState<"chats" | "code">("chats");
+  const [activeTab, setActiveTab] = useState<"chats" | "code" | "terminal">("chats");
 
   const { data: conversations, isLoading } = useListOpenrouterConversations();
   const deleteConversation = useDeleteOpenrouterConversation();
@@ -192,6 +193,23 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
             </TooltipTrigger>
             <TooltipContent side="right" className="text-[11px]">Code</TooltipContent>
           </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                data-testid="tab-terminal"
+                onClick={() => setActiveTab("terminal")}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
+                  activeTab === "terminal"
+                    ? "bg-primary/15 text-primary shadow-sm glossy relative"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                }`}
+              >
+                <Terminal className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-[11px]">Terminal</TooltipContent>
+          </Tooltip>
         </TooltipProvider>
 
         <div className="mt-auto">
@@ -241,6 +259,10 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
 
         {activeTab === "code" && (
           <CodePanel onLoadFile={onLoadFile} onOpenRepoChat={onOpenRepoChat} />
+        )}
+
+        {activeTab === "terminal" && (
+          <TerminalPanel />
         )}
       </div>
     </div>
