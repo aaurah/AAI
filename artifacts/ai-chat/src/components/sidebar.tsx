@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useListOpenrouterConversations, useDeleteOpenrouterConversation, getListOpenrouterConversationsQueryKey } from "@workspace/api-client-react";
-import { Plus, MessageSquare, Trash2, Code2, Settings, Terminal } from "lucide-react";
+import { Plus, MessageSquare, Trash2, Code2, Settings, Terminal, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
@@ -135,11 +135,21 @@ function ConversationItem({
 
 export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<"chats" | "code" | "terminal">("chats");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const handler = () => setActiveTab("terminal");
     window.addEventListener("switch-to-terminal", handler);
     return () => window.removeEventListener("switch-to-terminal", handler);
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    if (!token) return;
+    fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.user?.isAdmin) setIsAdmin(true); })
+      .catch(() => {});
   }, []);
 
   const { data: conversations, isLoading } = useListOpenrouterConversations();
@@ -218,8 +228,20 @@ export function Sidebar({ activeId, onCloseMobile, onLoadFile, onOpenRepoChat }:
           </Tooltip>
         </TooltipProvider>
 
-        <div className="mt-auto">
+        <div className="mt-auto flex flex-col items-center gap-1">
           <TooltipProvider>
+            {isAdmin && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/admin">
+                    <button className="flex h-8 w-8 items-center justify-center rounded-lg text-amber-500 hover:bg-amber-500/10 hover:text-amber-400 transition-colors" data-testid="admin-btn">
+                      <ShieldCheck className="h-4 w-4" />
+                    </button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="text-[11px]">Admin Panel</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Link href="/settings">
