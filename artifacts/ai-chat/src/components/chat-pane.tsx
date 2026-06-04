@@ -956,31 +956,31 @@ When the user asks about this project, answer based on the repository context ab
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto max-w-3xl space-y-8 pb-10">
           {showSuggestions && (
-            <div className="flex flex-col space-y-6 pt-8">
+            <div className="flex flex-col items-center justify-center pt-12 space-y-6">
+              <div className="flex flex-col items-center space-y-2 text-center">
+                <div className="rounded-full bg-primary/10 p-3.5">
+                  <Code2 className="h-7 w-7 text-primary" />
+                </div>
+                <h1 className="text-xl font-bold">How can I help you today?</h1>
+                {activeRepo && (
+                  <p className="text-[11px] text-muted-foreground">Repo context active — try a suggestion</p>
+                )}
+              </div>
               {activeRepo && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground px-1">Suggestions</p>
-                  <div className="flex flex-col gap-2">
-                    {REPO_SUGGESTIONS.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => handleSend({ text: s, attachments: [] })}
-                        className="text-left px-4 py-3 rounded-xl border border-border/60 bg-muted/30 hover:bg-muted/60 text-sm transition-colors"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                <div className="w-full max-w-lg grid grid-cols-2 gap-2">
+                  {REPO_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => handleSend({ text: s, attachments: [] })}
+                      className="text-left px-3 py-2 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/50 hover:border-primary/30 text-[11px] leading-snug transition-colors"
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
               )}
               {!activeRepo && (
-                <div className="flex h-[40vh] flex-col items-center justify-center text-center space-y-4">
-                  <div className="rounded-full bg-primary/10 p-4">
-                    <Code2 className="h-8 w-8 text-primary" />
-                  </div>
-                  <h1 className="text-2xl font-bold">How can I help you today?</h1>
-                  <p className="text-muted-foreground max-w-md text-sm">Start a conversation or connect a GitHub repo to get coding assistance.</p>
-                </div>
+                <p className="text-muted-foreground text-sm text-center max-w-xs">Start a conversation or connect a GitHub repo from the Code tab.</p>
               )}
             </div>
           )}
