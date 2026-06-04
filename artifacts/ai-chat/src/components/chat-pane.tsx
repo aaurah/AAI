@@ -867,7 +867,7 @@ When the user asks about this project, answer based on the repository context ab
   return (
     <div className="flex h-full flex-col bg-background relative">
       {/* Header */}
-      <div className="flex h-11 items-center border-b border-border/50 px-4 flex-shrink-0 relative glass">
+      <div className="flex h-11 items-center border-b border-border/50 px-4 flex-shrink-0 relative glass gap-2">
         <div className="ml-10 md:ml-0 flex-1 flex justify-center md:justify-start">
           <Select value={model} onValueChange={setModel}>
             <SelectTrigger className="border-0 bg-transparent shadow-none focus:ring-0 text-[13px] font-semibold gap-1 w-auto px-0">
@@ -934,23 +934,17 @@ When the user asks about this project, answer based on the repository context ab
             </SelectContent>
           </Select>
         </div>
-      </div>
-
-      {/* Active repo banner */}
-      {activeRepo && (
-        <div className="flex justify-center py-1 border-b border-border/30 shrink-0 glass">
-          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] text-muted-foreground border border-primary/20 bg-primary/5">
-            <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+        {activeRepo && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground border border-primary/20 bg-primary/5 shrink-0 max-w-[160px] md:max-w-[220px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
             <Github className="h-3 w-3 text-primary/70 shrink-0" />
-            <span className="font-medium text-foreground max-w-[200px] truncate">{activeRepo.fullName}</span>
-            <span className="text-muted-foreground/60">·</span>
-            <span className="text-muted-foreground/80">context active</span>
-            <button onClick={handleClearRepo} className="ml-1 text-muted-foreground/50 hover:text-foreground transition-colors">
+            <span className="font-medium text-foreground truncate">{activeRepo.fullName}</span>
+            <button onClick={handleClearRepo} className="ml-0.5 text-muted-foreground/50 hover:text-foreground transition-colors shrink-0">
               <X className="h-3 w-3" />
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Chat Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-6">

@@ -70,7 +70,7 @@ export default function Home() {
         />
       )}
 
-      <div className={`fixed inset-y-0 left-0 z-50 w-[272px] transform border-r bg-sidebar transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 w-full md:w-[272px] transform border-r bg-sidebar transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <Sidebar
           activeId={conversationId}
           onCloseMobile={() => setSidebarOpen(false)}
