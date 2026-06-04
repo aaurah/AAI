@@ -20,6 +20,7 @@ export default function Home() {
   const [repoContext, setRepoContext] = useState<RepoContext | null>(null);
   const [, setLocation] = useLocation();
   const [isAuthed, setIsAuthed] = useState<boolean | null>(null);
+  const [userName, setUserName] = useState<string>("");
 
   const conversationId = params.id ? parseInt(params.id, 10) : undefined;
 
@@ -27,7 +28,13 @@ export default function Home() {
     const token = localStorage.getItem("auth_token");
     if (!token) { setIsAuthed(false); return; }
     fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => setIsAuthed(r.ok))
+      .then(async (r) => {
+        if (!r.ok) { setIsAuthed(false); return; }
+        const data = await r.json() as { name?: string; email?: string };
+        setIsAuthed(true);
+        const firstName = (data.name || data.email || "").split(/[\s@]/)[0];
+        setUserName(firstName || "");
+      })
       .catch(() => setIsAuthed(false));
   }, []);
 
@@ -92,6 +99,7 @@ export default function Home() {
           autoSend={autoSend}
           repoContext={repoContext}
           onPrefilledInputClear={handlePrefilledClear}
+          userName={userName}
         />
       </div>
     </div>
